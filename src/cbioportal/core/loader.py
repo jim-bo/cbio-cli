@@ -181,7 +181,7 @@ def load_study_metadata(conn, study_path: Path):
     ))
     return True
 
-def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: bool = False, load_sv: bool = False):
+def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: bool = False, load_sv: bool = False, load_timeline: bool = False):
     """Load clinical and genomic data for a study."""
     raw_study_id = study_path.name
     patient_file = study_path / "data_clinical_patient.txt"
@@ -190,6 +190,7 @@ def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: b
     gene_panel_file = study_path / "data_gene_panel_matrix.txt"
     sv_file = study_path / "data_sv.txt"
     cna_file = study_path / "data_cna.txt"
+    timeline_files = list(study_path.glob("data_timeline_*.txt"))
     
     if not mutation_file.exists():
         variants = list(study_path.glob("data_mutations*.txt"))
@@ -240,6 +241,14 @@ def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: b
             """
             conn.execute(unpivot_sql)
             loaded_any = True
+        if load_timeline and timeline_files:
+            for timeline_file in timeline_files:
+                # Extract suffix from filename, e.g., 'treatment' from 'data_timeline_treatment.txt'
+                suffix = timeline_file.stem.replace("data_timeline_", "")
+                table_name = f'"{raw_study_id}_timeline_{suffix}"'
+                conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                conn.execute(f"CREATE TABLE {table_name} AS SELECT '{raw_study_id}' as study_id, * FROM read_csv('{timeline_file}', delim='\t', header=True, comment='#', null_padding=True, ignore_errors=True)")
+            loaded_any = True
         if gene_panel_file.exists():
             table_name = f'"{raw_study_id}_gene_panel"'
             conn.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -268,6 +277,8 @@ def create_global_views(conn):
     """Refresh unified views across all loaded study tables."""
     tables_res = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_type = 'BASE TABLE'").fetchall()
     tables = [t[0] for t in tables_res]
+    
+    # Standard suffixes
     suffixes = {
         "patient": "clinical_patient", 
         "sample": "clinical_sample", 
@@ -276,14 +287,32 @@ def create_global_views(conn):
         "sv": "sv",
         "cna": "cna"
     }
-    for suffix, view_name in suffixes.items():
-        study_tables = [f'"{t}"' for t in tables if t.endswith(f"_{suffix}")]
-        conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+    
+    # Dynamically find timeline suffixes
+    for t in tables:
+        if "_timeline_" in t:
+            suffix = t.split("_timeline_")[-1]
+            if f"timeline_{suffix}" not in suffixes:
+                suffixes[f"timeline_{suffix}"] = f"timeline_{suffix}"
+
+    for suffix_key, view_name in suffixes.items():
+        # Handle timeline keys which might already have the 'timeline_' prefix
+        suffix = suffix_key if suffix_key.startswith("timeline_") else f"_{suffix_key}"
+        study_tables = [f'"{t}"' for t in tables if t.endswith(suffix) or (suffix_key == t.split("_")[-1] and not suffix_key.startswith("timeline_"))]
+        
+        # Refined logic for matching suffixes to avoid overlaps
+        if not suffix_key.startswith("timeline_"):
+            study_tables = [f'"{t}"' for t in tables if t.endswith(f"_{suffix_key}")]
+        else:
+            actual_suffix = suffix_key.replace("timeline_", "")
+            study_tables = [f'"{t}"' for t in tables if t.endswith(f"_timeline_{actual_suffix}")]
+
+        conn.execute(f'DROP VIEW IF EXISTS "{view_name}"')
         if study_tables:
             union_sql = " UNION ALL BY NAME ".join([f"SELECT * FROM {t}" for t in study_tables])
-            conn.execute(f"CREATE VIEW {view_name} AS {union_sql}")
+            conn.execute(f'CREATE VIEW "{view_name}" AS {union_sql}')
 
-def load_all_studies(conn, datahub_path: Path, limit: int = None, offset: int = 0, load_mutations: bool = False, load_cna: bool = False, load_sv: bool = False):
+def load_all_studies(conn, datahub_path: Path, limit: int = None, offset: int = 0, load_mutations: bool = False, load_cna: bool = False, load_sv: bool = False, load_timeline: bool = False):
     """Iterate through studies and load them incrementally."""
     monitor = Monitor()
     all_studies = discover_studies(datahub_path)
@@ -294,7 +323,7 @@ def load_all_studies(conn, datahub_path: Path, limit: int = None, offset: int = 
     with typer.progressbar(studies, label="Loading studies") as progress:
         for study_path in progress:
             load_study_metadata(conn, study_path)
-            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv):
+            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline):
                 total_loaded += 1
     create_global_views(conn)
     metrics = monitor.get_metrics()

@@ -9,7 +9,8 @@ def load_all(
     offset: int = typer.Option(0, help="Number of studies to skip before starting"),
     mutations: bool = typer.Option(False, help="Whether to load mutation data (heavy)"),
     cna: bool = typer.Option(False, help="Whether to load CNA data (heavy)"),
-    sv: bool = typer.Option(False, help="Whether to load SV data")
+    sv: bool = typer.Option(False, help="Whether to load SV data"),
+    timeline: bool = typer.Option(False, help="Whether to load timeline data")
 ):
     """Load studies from the source directory into DuckDB."""
     source_path = loader.get_source_path()
@@ -22,7 +23,7 @@ def load_all(
     typer.echo(f"Searching for studies in {source_path}...")
     
     loaded_count, metrics = loader.load_all_studies(
-        conn, source_path, limit=limit, offset=offset, load_mutations=mutations, load_cna=cna, load_sv=sv
+        conn, source_path, limit=limit, offset=offset, load_mutations=mutations, load_cna=cna, load_sv=sv, load_timeline=timeline
     )
     
     conn.close()
@@ -39,6 +40,7 @@ def load_lfs(
     mutations: bool = typer.Option(True, help="Whether to load mutation data (heavy)"),
     cna: bool = typer.Option(False, help="Whether to load CNA data (heavy)"),
     sv: bool = typer.Option(False, help="Whether to load SV data"),
+    timeline: bool = typer.Option(False, help="Whether to load timeline data"),
     keep_data: bool = typer.Option(False, help="Whether to keep the uncompressed data on disk after loading")
 ):
     """Load an LFS-backed study by pulling, loading, and then hiding the data."""
@@ -64,7 +66,7 @@ def load_lfs(
         typer.echo(f"Ingesting into DuckDB...")
         conn = database.get_connection()
         loader.load_study_metadata(conn, study_path)
-        success = loader.load_study(conn, study_path, load_mutations=mutations, load_cna=cna, load_sv=sv)
+        success = loader.load_study(conn, study_path, load_mutations=mutations, load_cna=cna, load_sv=sv, load_timeline=timeline)
         loader.create_global_views(conn)
         conn.close()
         
@@ -87,7 +89,8 @@ def add(
     study_id: str,
     mutations: bool = typer.Option(False, help="Whether to load mutation data (heavy)"),
     cna: bool = typer.Option(False, help="Whether to load CNA data (heavy)"),
-    sv: bool = typer.Option(False, help="Whether to load SV data")
+    sv: bool = typer.Option(False, help="Whether to load SV data"),
+    timeline: bool = typer.Option(False, help="Whether to load timeline data")
 ):
     """Add or update a single study by ID."""
     source_path = loader.get_source_path()
@@ -110,7 +113,7 @@ def add(
     loader.load_study_metadata(conn, study_path)
     
     # 2. Data
-    success = loader.load_study(conn, study_path, load_mutations=mutations, load_cna=cna, load_sv=sv)
+    success = loader.load_study(conn, study_path, load_mutations=mutations, load_cna=cna, load_sv=sv, load_timeline=timeline)
     
     # 3. Refresh Views
     loader.create_global_views(conn)
