@@ -48,536 +48,30 @@ def get_study_metadata(conn, study_id: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Clinical attributes introspection
+# Filter engine (Internal)
 # ---------------------------------------------------------------------------
 
-_EXCLUDED_COLS = {"study_id", "PATIENT_ID", "SAMPLE_ID"}
-
-
-def _get_table_columns(conn, table_name: str) -> list[str]:
-    """Return column names for the given table, excluding internal cols."""
-    try:
-        rows = conn.execute(f'DESCRIBE "{table_name}"').fetchall()
-        return [r[0] for r in rows if r[0] not in _EXCLUDED_COLS]
-    except Exception:
-        return []
-
-
-def get_clinical_attributes(conn, study_id: str) -> dict[str, str]:
-    """Return {column_name: source_table} for all clinical attribute columns.
-
-    source_table is either 'sample' or 'patient'.
+def _build_filter_subquery(conn, study_id: str, filter_json: str | None) -> tuple[str, list]:
     """
-    sample_cols = _get_table_columns(conn, f"{study_id}_sample")
-    patient_cols = _get_table_columns(conn, f"{study_id}_patient")
-
-    attrs: dict[str, str] = {}
-    for col in sample_cols:
-        attrs[col] = "sample"
-    for col in patient_cols:
-        if col not in attrs:
-            attrs[col] = "patient"
-    return attrs
-
-
-# ---------------------------------------------------------------------------
-# Clinical attribute counts
-# ---------------------------------------------------------------------------
-
-def get_clinical_counts(
-    conn,
-    study_id: str,
-    attribute_id: str,
-    source_table: str = "sample",
-    filtered_sample_ids: list[str] | None = None,
-) -> list[dict]:
-    """Return [{value, count, pct}] sorted by count desc for a clinical attribute."""
-    table = f'"{study_id}_{source_table}"'
-    col = f'"{attribute_id}"'
-
-    where = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where = f"WHERE SAMPLE_ID IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        sql = f"""
-            SELECT
-                COALESCE(CAST({col} AS VARCHAR), 'NA') AS val,
-                COUNT(*) AS cnt
-            FROM {table}
-            {where}
-            GROUP BY val
-            ORDER BY cnt DESC
-            LIMIT 100
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    total = sum(r[1] for r in rows) or 1
-    return [
-        {"value": r[0], "count": r[1], "pct": round(r[1] / total * 100, 1)}
-        for r in rows
-    ]
-
-
-def get_all_clinical_counts(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-) -> dict[str, list[dict]]:
-    """Return clinical counts for every available attribute."""
-    attrs = get_clinical_attributes(conn, study_id)
-    result: dict[str, list[dict]] = {}
-    for attr_id, source in attrs.items():
-        result[attr_id] = get_clinical_counts(
-            conn, study_id, attr_id, source, filtered_sample_ids
-        )
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
-
-def get_data_types(conn, study_id: str) -> list[str]:
-    """Return list of data type strings available for the study."""
-    try:
-        rows = conn.execute(
-            "SELECT data_type FROM study_data_types WHERE study_id = ? ORDER BY data_type",
-            (study_id,),
-        ).fetchall()
-        return [r[0] for r in rows]
-    except Exception:
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Genomic table widgets
-# ---------------------------------------------------------------------------
-
-def get_mutated_genes(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-    limit: int = 50,
-) -> list[dict]:
-    """Return [{gene, n_mut, n_samples, freq}] sorted by n_samples desc."""
-    table = f'"{study_id}_mutations"'
-    total_samples_sql = f'SELECT COUNT(DISTINCT SAMPLE_ID) FROM "{study_id}_sample"'
-
-    where = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where = f"WHERE SAMPLE_ID IN ({placeholders})"
-        params = list(filtered_sample_ids)
-        total_samples_sql = f'SELECT COUNT(DISTINCT SAMPLE_ID) FROM "{study_id}_sample" {where}'
-
-    try:
-        total = conn.execute(total_samples_sql, params).fetchone()[0] or 1
-        sql = f"""
-            SELECT
-                Hugo_Symbol,
-                COUNT(*) AS n_mut,
-                COUNT(DISTINCT SAMPLE_ID) AS n_samples
-            FROM {table}
-            {where}
-            GROUP BY Hugo_Symbol
-            ORDER BY n_samples DESC
-            LIMIT {limit}
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    return [
-        {
-            "gene": r[0],
-            "n_mut": r[1],
-            "n_samples": r[2],
-            "freq": round(r[2] / total * 100, 1),
-        }
-        for r in rows
-    ]
-
-
-def get_sv_genes(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-    limit: int = 50,
-) -> list[dict]:
-    """Return [{gene, n_sv, n_samples, freq}] sorted by n_samples desc."""
-    table = f'"{study_id}_sv"'
-
-    where = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where = f"WHERE Sample_Id IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        total_sql = f'SELECT COUNT(DISTINCT SAMPLE_ID) FROM "{study_id}_sample"'
-        total = conn.execute(total_sql).fetchone()[0] or 1
-
-        # SV tables may have Gene1 or Site1_Hugo_Symbol depending on study
-        col_check = conn.execute(f'DESCRIBE {table}').fetchall()
-        col_names = [r[0] for r in col_check]
-
-        if "Site1_Hugo_Symbol" in col_names:
-            gene_col = "Site1_Hugo_Symbol"
-            sample_col = "Sample_Id"
-        elif "Gene1" in col_names:
-            gene_col = "Gene1"
-            sample_col = "Sample_Id"
-        else:
-            return []
-
-        gene_filter = f"{gene_col} IS NOT NULL AND {gene_col} != ''"
-        if where:
-            combined_where = f"{where} AND {gene_filter}"
-        else:
-            combined_where = f"WHERE {gene_filter}"
-
-        sql = f"""
-            SELECT
-                {gene_col} AS gene,
-                COUNT(*) AS n_sv,
-                COUNT(DISTINCT {sample_col}) AS n_samples
-            FROM {table}
-            {combined_where}
-            GROUP BY gene
-            ORDER BY n_samples DESC
-            LIMIT {limit}
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    return [
-        {
-            "gene": r[0],
-            "n_sv": r[1],
-            "n_samples": r[2],
-            "freq": round(r[2] / total * 100, 1),
-        }
-        for r in rows
-    ]
-
-
-def get_cna_genes(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-    limit: int = 50,
-) -> list[dict]:
-    """Return [{gene, cna_type, n_samples, freq}] (AMP=cna_value 2, HOMDEL=cna_value -2)."""
-    table = f'"{study_id}_cna"'
-
-    where_extra = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where_extra = f"AND sample_id IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        total = conn.execute(
-            f'SELECT COUNT(DISTINCT SAMPLE_ID) FROM "{study_id}_sample"'
-        ).fetchone()[0] or 1
-
-        sql = f"""
-            SELECT
-                hugo_symbol,
-                CASE WHEN cna_value = 2 THEN 'AMP' WHEN cna_value = -2 THEN 'HOMDEL' ELSE 'OTHER' END AS cna_type,
-                COUNT(DISTINCT sample_id) AS n_samples
-            FROM {table}
-            WHERE cna_value IN (2, -2)
-            {where_extra}
-            GROUP BY hugo_symbol, cna_type
-            ORDER BY n_samples DESC
-            LIMIT {limit}
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    return [
-        {
-            "gene": r[0],
-            "cna_type": r[1],
-            "n_samples": r[2],
-            "freq": round(r[2] / total * 100, 1),
-        }
-        for r in rows
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Complex charts
-# ---------------------------------------------------------------------------
-
-def get_age_histogram(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-) -> list[dict]:
-    """Return binned age counts. Tries AGE, then DIAGNOSIS_AGE, then AGE_AT_SEQ_REPORT."""
-    attrs = get_clinical_attributes(conn, study_id)
-
-    age_col = None
-    source = "sample"
-    for candidate in ("AGE", "DIAGNOSIS_AGE", "AGE_AT_SEQ_REPORT", "AGE_AT_DIAGNOSIS"):
-        if candidate in attrs:
-            age_col = candidate
-            source = attrs[candidate]
-            break
-
-    if not age_col:
-        return []
-
-    table = f'"{study_id}_{source}"'
-
-    sample_filter = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        sample_filter = f"AND SAMPLE_ID IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        sql = f"""
-            SELECT
-                CASE
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 35 THEN '<=35'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 40 THEN '35-40'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 45 THEN '40-45'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 50 THEN '45-50'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 55 THEN '50-55'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 60 THEN '55-60'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 65 THEN '60-65'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 70 THEN '65-70'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 75 THEN '70-75'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 80 THEN '75-80'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) <= 85 THEN '80-85'
-                    WHEN TRY_CAST("{age_col}" AS DOUBLE) > 85 THEN '>85'
-                    ELSE 'NA'
-                END AS bin,
-                COUNT(*) AS cnt
-            FROM {table}
-            WHERE TRY_CAST("{age_col}" AS DOUBLE) IS NOT NULL
-            {sample_filter}
-            GROUP BY bin
-            ORDER BY
-                CASE bin
-                    WHEN '<=35' THEN 1 WHEN '35-40' THEN 2 WHEN '40-45' THEN 3
-                    WHEN '45-50' THEN 4 WHEN '50-55' THEN 5 WHEN '55-60' THEN 6
-                    WHEN '60-65' THEN 7 WHEN '65-70' THEN 8 WHEN '70-75' THEN 9
-                    WHEN '75-80' THEN 10 WHEN '80-85' THEN 11 WHEN '>85' THEN 12
-                    ELSE 99
-                END
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    return [{"bin": r[0], "count": r[1]} for r in rows]
-
-
-def get_km_data(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-) -> list[dict]:
-    """Return [{time, survival}] KM curve points from OS_MONTHS + OS_STATUS."""
-    attrs = get_clinical_attributes(conn, study_id)
-
-    time_col = None
-    status_col = None
-    source = "patient"
-
-    for tc in ("OS_MONTHS", "os_months"):
-        if tc in attrs:
-            time_col = tc
-            source = attrs[tc]
-            break
-    for sc in ("OS_STATUS", "os_status"):
-        if sc in attrs:
-            status_col = sc
-            break
-
-    if not time_col or not status_col:
-        return []
-
-    table = f'"{study_id}_{source}"'
-
-    where = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where = f"AND SAMPLE_ID IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        sql = f"""
-            SELECT
-                TRY_CAST("{time_col}" AS DOUBLE) AS t,
-                CASE
-                    WHEN "{status_col}" ILIKE '%deceased%' OR "{status_col}" = '1:DECEASED' THEN 1
-                    ELSE 0
-                END AS event
-            FROM {table}
-            WHERE TRY_CAST("{time_col}" AS DOUBLE) IS NOT NULL
-            {where}
-            ORDER BY t
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
-
-    pairs = [(r[0], r[1]) for r in rows if r[0] is not None]
-    return compute_km_curve(pairs)
-
-
-def compute_km_curve(pairs: list[tuple[float, int]]) -> list[dict]:
-    """Kaplan-Meier step function. pairs = [(time, event)] where event=1=death."""
-    if not pairs:
-        return []
-
-    # Sort by time
-    pairs = sorted(pairs, key=lambda x: x[0])
-
-    survival = 1.0
-    n_at_risk = len(pairs)
-    curve = [{"time": 0.0, "survival": 1.0}]
-
-    i = 0
-    while i < len(pairs):
-        t = pairs[i][0]
-        # Collect all observations at this time point
-        deaths = 0
-        censored = 0
-        j = i
-        while j < len(pairs) and pairs[j][0] == t:
-            if pairs[j][1] == 1:
-                deaths += 1
-            else:
-                censored += 1
-            j += 1
-
-        if deaths > 0:
-            survival *= (n_at_risk - deaths) / n_at_risk
-            curve.append({"time": t, "survival": round(survival, 4)})
-
-        n_at_risk -= (deaths + censored)
-        i = j
-
-    return curve
-
-
-def get_tmb_fga_scatter(
-    conn,
-    study_id: str,
-    filtered_sample_ids: list[str] | None = None,
-    max_points: int = 2000,
-) -> list[dict]:
-    """Return [{mutation_count, fga}] scatter data. Samples if > max_points."""
-    attrs = get_clinical_attributes(conn, study_id)
-    fga_col = None
-    for candidate in ("FRACTION_GENOME_ALTERED", "FGA"):
-        if candidate in attrs:
-            fga_col = candidate
-            break
-
-    if not fga_col:
-        return []
-
-    sample_table = f'"{study_id}_sample"'
-    mut_table = f'"{study_id}_mutations"'
-
-    where = ""
-    params: list = []
-    if filtered_sample_ids is not None:
-        placeholders = ", ".join("?" * len(filtered_sample_ids))
-        where = f"WHERE s.SAMPLE_ID IN ({placeholders})"
-        params = list(filtered_sample_ids)
-
-    try:
-        sql = f"""
-            SELECT
-                s.SAMPLE_ID,
-                TRY_CAST(s."{fga_col}" AS DOUBLE) AS fga,
-                COUNT(m.SAMPLE_ID) AS mutation_count
-            FROM {sample_table} s
-            LEFT JOIN {mut_table} m ON s.SAMPLE_ID = m.SAMPLE_ID
-            {where}
-            GROUP BY s.SAMPLE_ID, fga
-            HAVING fga IS NOT NULL
-            USING SAMPLE RESERVOIR ({max_points} ROWS)
-            ORDER BY mutation_count DESC
-        """
-        rows = conn.execute(sql, params).fetchall()
-    except Exception:
-        # Fallback without RESERVOIR sampling
-        try:
-            sql2 = f"""
-                SELECT
-                    s.SAMPLE_ID,
-                    TRY_CAST(s."{fga_col}" AS DOUBLE) AS fga,
-                    COUNT(m.SAMPLE_ID) AS mutation_count
-                FROM {sample_table} s
-                LEFT JOIN {mut_table} m ON s.SAMPLE_ID = m.SAMPLE_ID
-                {where}
-                GROUP BY s.SAMPLE_ID, fga
-                HAVING fga IS NOT NULL
-                ORDER BY mutation_count DESC
-                LIMIT {max_points}
-            """
-            rows = conn.execute(sql2, params).fetchall()
-        except Exception:
-            return []
-
-    return [
-        {"sample_id": r[0], "fga": round(r[1], 4), "mutation_count": r[2]}
-        for r in rows
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Filter engine (Phase 5)
-# ---------------------------------------------------------------------------
-
-def build_filtered_sample_ids(
-    conn,
-    study_id: str,
-    filter_json: str | None,
-) -> list[str] | None:
-    """Parse filter_json and return filtered SAMPLE_ID list, or None if no filter."""
+    Returns (sql_subquery, params). 
+    The SQL returns a list of SAMPLE_IDs that match the filters.
+    """
     if not filter_json:
-        return None
+        return f'SELECT SAMPLE_ID FROM "{study_id}_sample"', []
 
     try:
         f = json.loads(filter_json)
     except (json.JSONDecodeError, TypeError):
-        return None
+        return f'SELECT SAMPLE_ID FROM "{study_id}_sample"', []
 
     clinical_filters = f.get("clinicalDataFilters", [])
     mutation_filter_genes = f.get("mutationFilter", {}).get("genes", [])
 
     if not clinical_filters and not mutation_filter_genes:
-        return None
+        return f'SELECT SAMPLE_ID FROM "{study_id}_sample"', []
 
     subqueries: list[str] = []
     params: list = []
-
-    # Base: all samples in study
-    base_sql = f'SELECT DISTINCT SAMPLE_ID FROM "{study_id}_sample"'
-    subqueries.append(base_sql)
 
     # Clinical filters
     attrs = get_clinical_attributes(conn, study_id)
@@ -615,7 +109,11 @@ def build_filtered_sample_ids(
 
         if conditions:
             where = f"({' OR '.join(conditions)})"
-            subqueries.append(f'SELECT DISTINCT SAMPLE_ID FROM {table} WHERE {where}')
+            if source == "sample":
+                subqueries.append(f'SELECT DISTINCT SAMPLE_ID FROM {table} WHERE {where}')
+            else:
+                # Patient level filter needs to join to samples
+                subqueries.append(f'SELECT DISTINCT s.SAMPLE_ID FROM "{study_id}_sample" s JOIN {table} p ON s.PATIENT_ID = p.PATIENT_ID WHERE {where}')
             params.extend(local_params)
 
     # Mutation gene filter
@@ -625,12 +123,525 @@ def build_filtered_sample_ids(
         )
         params.append(gene)
 
-    if len(subqueries) == 1:
-        return None
+    if not subqueries:
+        return f'SELECT SAMPLE_ID FROM "{study_id}_sample"', []
 
-    intersect_sql = "\nINTERSECT\n".join(subqueries)
+    sql = "\nINTERSECT\n".join(subqueries)
+    return sql, params
+
+
+# ---------------------------------------------------------------------------
+# Color mapping logic
+# ---------------------------------------------------------------------------
+
+CBIOPORTAL_D3_COLORS = [
+    "#3366cc", "#dc3912", "#ff9900", "#109618", "#990099", "#0099c6", "#dd4477",
+    "#66aa00", "#b82e2e", "#316395", "#994499", "#22aa99", "#aaaa11", "#6633cc",
+    "#e67300", "#8b0707", "#651067", "#329262", "#5574a6", "#3b3eac", "#b77322",
+    "#16d620", "#b91383", "#f4359e", "#9c5935", "#a9c413", "#2a778d", "#668d1c",
+    "#bea413", "#0c5922", "#743411"
+]
+
+RESERVED_COLORS = {
+    "male": "#2986E2",
+    "female": "#E0699E",
+    "yes": "#1b9e77",
+    "no": "#d95f02",
+    "true": "#1b9e77",
+    "false": "#d95f02",
+    "deceased": "#d95f02",
+    "living": "#1b9e77",
+    "na": "#D3D3D3",
+    "unknown": "#A9A9A9"
+}
+
+def _hash_string(s: str) -> int:
+    h = 0
+    for char in s:
+        h = (31 * h + ord(char)) & 0xFFFFFFFF
+    return h
+
+def get_value_color(conn, value: str, attr_id: str = None) -> str:
+    """Resolve color based on reserved maps, OncoTree, or D3 fallback."""
+    v_lower = str(value).lower().strip()
+    
+    # 1. Reserved colors
+    if v_lower in RESERVED_COLORS:
+        return RESERVED_COLORS[v_lower]
+    
+    # 2. OncoTree colors (if it's a cancer type)
+    if attr_id == "CANCER_TYPE" or attr_id == "CANCER_TYPE_DETAILED":
+        try:
+            row = conn.execute("SELECT dedicated_color FROM cancer_types WHERE name = ?", (value,)).fetchone()
+            if row and row[0] and row[0] != 'Gainsboro':
+                return row[0]
+        except Exception:
+            pass
+
+    # 3. D3 Fallback (consistent hashing)
+    idx = abs(_hash_string(str(value))) % len(CBIOPORTAL_D3_COLORS)
+    return CBIOPORTAL_D3_COLORS[idx]
+
+
+# ---------------------------------------------------------------------------
+# Clinical attribute counts
+# ---------------------------------------------------------------------------
+
+def get_clinical_counts(
+    conn,
+    study_id: str,
+    attribute_id: str,
+    source_table: str = "sample",
+    filter_json: str | None = None,
+) -> list[dict]:
+    """Return [{value, count, pct, color}] sorted by count desc for a clinical attribute."""
+    table = f'"{study_id}_{source_table}"'
+    col = f'"{attribute_id}"'
+
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
     try:
-        rows = conn.execute(intersect_sql, params).fetchall()
+        # Join the filtered sample list against the attribute table
+        if source_table == "sample":
+            sql = f"""
+                SELECT
+                    COALESCE(CAST(t.{col} AS VARCHAR), 'NA') AS val,
+                    COUNT(*) AS cnt
+                FROM {table} t
+                WHERE t.SAMPLE_ID IN ({filter_sql})
+                GROUP BY val
+                ORDER BY cnt DESC
+                LIMIT 100
+            """
+        else:
+            # Patient table join
+            sql = f"""
+                SELECT
+                    COALESCE(CAST(p.{col} AS VARCHAR), 'NA') AS val,
+                    COUNT(DISTINCT s.SAMPLE_ID) AS cnt
+                FROM "{study_id}_sample" s
+                JOIN {table} p ON s.PATIENT_ID = p.PATIENT_ID
+                WHERE s.SAMPLE_ID IN ({filter_sql})
+                GROUP BY val
+                ORDER BY cnt DESC
+                LIMIT 100
+            """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    total = sum(r[1] for r in rows) or 1
+    
+    results = []
+    for i, r in enumerate(rows):
+        value = r[0]
+        count = r[1]
+        v_lower = str(value).lower().strip()
+        
+        # 1. Check Reserved Colors first
+        if v_lower in RESERVED_COLORS:
+            color = RESERVED_COLORS[v_lower]
+        else:
+            # 2. Assign by Rank (Order of Frequency) to match cBioPortal aesthetic
+            color = CBIOPORTAL_D3_COLORS[i % len(CBIOPORTAL_D3_COLORS)]
+            
+        results.append({
+            "value": value,
+            "count": count,
+            "pct": round(count / total * 100, 1),
+            "color": color
+        })
+        
+    return results
+
+
+
+def get_all_clinical_counts(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+) -> dict[str, list[dict]]:
+    """Return clinical counts for every available attribute."""
+    attrs = get_clinical_attributes(conn, study_id)
+    result: dict[str, list[dict]] = {}
+    for attr_id, source in attrs.items():
+        result[attr_id] = get_clinical_counts(
+            conn, study_id, attr_id, source, filter_json
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Genomic table widgets
+# ---------------------------------------------------------------------------
+
+def get_mutated_genes(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Return [{gene, n_mut, n_samples, freq}] sorted by n_samples desc."""
+    table = f'"{study_id}_mutations"'
+    
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        # Total samples matching filter (denominator)
+        total_sql = f"SELECT COUNT(*) FROM ({filter_sql})"
+        total = conn.execute(total_sql, params).fetchone()[0] or 1
+
+        sql = f"""
+            SELECT
+                Hugo_Symbol,
+                COUNT(*) AS n_mut,
+                COUNT(DISTINCT SAMPLE_ID) AS n_samples
+            FROM {table}
+            WHERE SAMPLE_ID IN ({filter_sql})
+            GROUP BY Hugo_Symbol
+            ORDER BY n_samples DESC
+            LIMIT {limit}
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    return [
+        {
+            "gene": r[0],
+            "n_mut": r[1],
+            "n_samples": r[2],
+            "freq": round(r[2] / total * 100, 1),
+        }
+        for r in rows
+    ]
+
+
+def get_age_histogram(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+) -> list[dict]:
+    """Return binned age counts. Tries CURRENT_AGE_DEID, AGE, then DIAGNOSIS_AGE."""
+    attrs = get_clinical_attributes(conn, study_id)
+
+    age_col = None
+    source = "sample"
+    # MSK-CHORD specific check: CURRENT_AGE_DEID
+    for candidate in ("CURRENT_AGE_DEID", "AGE", "DIAGNOSIS_AGE", "AGE_AT_SEQ_REPORT", "AGE_AT_DIAGNOSIS"):
+        if candidate in attrs:
+            age_col = candidate
+            source = attrs[candidate]
+            break
+
+    if not age_col:
+        return []
+
+    table = f'"{study_id}_{source}"'
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        sql = f"""
+            SELECT
+                CASE
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 35 THEN '<=35'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 40 THEN '35-40'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 45 THEN '40-45'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 50 THEN '45-50'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 55 THEN '50-55'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 60 THEN '55-60'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 65 THEN '60-65'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 70 THEN '65-70'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 75 THEN '70-75'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 80 THEN '75-80'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) <= 85 THEN '80-85'
+                    WHEN TRY_CAST(t."{age_col}" AS DOUBLE) > 85 THEN '>85'
+                    ELSE 'NA'
+                END AS bin,
+                COUNT(*) AS cnt
+            FROM {table} t
+            WHERE TRY_CAST(t."{age_col}" AS DOUBLE) IS NOT NULL
+            AND t.SAMPLE_ID IN ({filter_sql})
+            GROUP BY bin
+            ORDER BY
+                CASE bin
+                    WHEN '<=35' THEN 1 WHEN '35-40' THEN 2 WHEN '40-45' THEN 3
+                    WHEN '45-50' THEN 4 WHEN '50-55' THEN 5 WHEN '55-60' THEN 6
+                    WHEN '60-65' THEN 7 WHEN '65-70' THEN 8 WHEN '70-75' THEN 9
+                    WHEN '75-80' THEN 10 WHEN '80-85' THEN 11 WHEN '>85' THEN 12
+                    ELSE 99
+                END
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    return [{"x": r[0], "y": r[1]} for r in rows]
+
+
+# (Note: SV and CNA would be updated similarly)
+
+def get_data_types(conn, study_id: str) -> list[str]:
+    """Return list of data type strings available for the study."""
+    try:
+        rows = conn.execute(
+            "SELECT data_type FROM study_data_types WHERE study_id = ? ORDER BY data_type",
+            (study_id,),
+        ).fetchall()
         return [r[0] for r in rows]
     except Exception:
+        return []
+
+
+def get_sv_genes(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Return [{gene, n_sv, n_samples, freq}] sorted by n_samples desc."""
+    table = f'"{study_id}_sv"'
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        total_sql = f"SELECT COUNT(*) FROM ({filter_sql})"
+        total = conn.execute(total_sql, params).fetchone()[0] or 1
+
+        col_check = conn.execute(f'DESCRIBE {table}').fetchall()
+        col_names = [r[0] for r in col_check]
+
+        if "Site1_Hugo_Symbol" in col_names:
+            gene_col = "Site1_Hugo_Symbol"
+            sample_col = "Sample_Id"
+        elif "Gene1" in col_names:
+            gene_col = "Gene1"
+            sample_col = "Sample_Id"
+        else:
+            return []
+
+        sql = f"""
+            SELECT
+                {gene_col} AS gene,
+                COUNT(*) AS n_sv,
+                COUNT(DISTINCT {sample_col}) AS n_samples
+            FROM {table}
+            WHERE {sample_col} IN ({filter_sql})
+            AND {gene_col} IS NOT NULL AND {gene_col} != ''
+            GROUP BY gene
+            ORDER BY n_samples DESC
+            LIMIT {limit}
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    return [
+        {
+            "gene": r[0],
+            "n_sv": r[1],
+            "n_samples": r[2],
+            "freq": round(r[2] / total * 100, 1),
+        }
+        for r in rows
+    ]
+
+
+def get_cna_genes(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Return [{gene, cna_type, n_samples, freq}] (AMP=cna_value 2, HOMDEL=cna_value -2)."""
+    table = f'"{study_id}_cna"'
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        total_sql = f"SELECT COUNT(*) FROM ({filter_sql})"
+        total = conn.execute(total_sql, params).fetchone()[0] or 1
+
+        sql = f"""
+            SELECT
+                hugo_symbol,
+                CASE WHEN cna_value = 2 THEN 'AMP' WHEN cna_value = -2 THEN 'HOMDEL' ELSE 'OTHER' END AS cna_type,
+                COUNT(DISTINCT sample_id) AS n_samples
+            FROM {table}
+            WHERE cna_value IN (2, -2)
+            AND sample_id IN ({filter_sql})
+            GROUP BY hugo_symbol, cna_type
+            ORDER BY n_samples DESC
+            LIMIT {limit}
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    return [
+        {
+            "gene": r[0],
+            "cna_type": r[1],
+            "n_samples": r[2],
+            "freq": round(r[2] / total * 100, 1),
+        }
+        for r in rows
+    ]
+
+
+def get_km_data(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+) -> list[dict]:
+    """Return [{time, survival}] KM curve points from OS_MONTHS + OS_STATUS."""
+    attrs = get_clinical_attributes(conn, study_id)
+    time_col = None
+    status_col = None
+    source = "patient"
+
+    for tc in ("OS_MONTHS", "os_months"):
+        if tc in attrs:
+            time_col = tc
+            source = attrs[tc]
+            break
+    for sc in ("OS_STATUS", "os_status"):
+        if sc in attrs:
+            status_col = sc
+            break
+
+    if not time_col or not status_col:
+        return []
+
+    table = f'"{study_id}_{source}"'
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        # Join to samples if patient table
+        sql = f"""
+            SELECT
+                TRY_CAST(p."{time_col}" AS DOUBLE) AS t,
+                CASE
+                    WHEN p."{status_col}" ILIKE '%deceased%' OR p."{status_col}" = '1:DECEASED' THEN 1
+                    ELSE 0
+                END AS event
+            FROM "{study_id}_sample" s
+            JOIN {table} p ON s.PATIENT_ID = p.PATIENT_ID
+            WHERE s.SAMPLE_ID IN ({filter_sql})
+            AND TRY_CAST(p."{time_col}" AS DOUBLE) IS NOT NULL
+            ORDER BY t
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    pairs = [(r[0], r[1]) for r in rows if r[0] is not None]
+    return compute_km_curve(pairs)
+
+
+def compute_km_curve(pairs: list[tuple[float, int]]) -> list[dict]:
+    """Kaplan-Meier step function. pairs = [(time, event)] where event=1=death."""
+    if not pairs:
+        return []
+    pairs = sorted(pairs, key=lambda x: x[0])
+    survival = 1.0
+    n_at_risk = len(pairs)
+    curve = [{"time": 0.0, "survival": 1.0}]
+    i = 0
+    while i < len(pairs):
+        t = pairs[i][0]
+        deaths = 0
+        censored = 0
+        j = i
+        while j < len(pairs) and pairs[j][0] == t:
+            if pairs[j][1] == 1:
+                deaths += 1
+            else:
+                censored += 1
+            j += 1
+        if deaths > 0:
+            survival *= (n_at_risk - deaths) / n_at_risk
+            curve.append({"time": t, "survival": round(survival, 4)})
+        n_at_risk -= (deaths + censored)
+        i = j
+    return curve
+
+
+def get_tmb_fga_scatter(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+    max_points: int = 2000,
+) -> list[dict]:
+    """Return [{mutation_count, fga}] scatter data."""
+    attrs = get_clinical_attributes(conn, study_id)
+    fga_col = None
+    for candidate in ("FRACTION_GENOME_ALTERED", "FGA"):
+        if candidate in attrs:
+            fga_col = candidate
+            break
+    if not fga_col:
+        return []
+
+    sample_table = f'"{study_id}_sample"'
+    mut_table = f'"{study_id}_mutations"'
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+
+    try:
+        sql = f"""
+            SELECT
+                s.SAMPLE_ID,
+                TRY_CAST(s."{fga_col}" AS DOUBLE) AS fga,
+                COUNT(m.SAMPLE_ID) AS mutation_count
+            FROM {sample_table} s
+            LEFT JOIN {mut_table} m ON s.SAMPLE_ID = m.SAMPLE_ID
+            WHERE s.SAMPLE_ID IN ({filter_sql})
+            GROUP BY s.SAMPLE_ID, fga
+            HAVING fga IS NOT NULL
+            LIMIT {max_points}
+        """
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+
+    return [
+        {"sample_id": r[0], "fga": round(r[1], 4), "mutation_count": r[2]}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Clinical attributes introspection
+# ---------------------------------------------------------------------------
+
+_EXCLUDED_COLS = {"study_id", "PATIENT_ID", "SAMPLE_ID"}
+
+
+def _get_table_columns(conn, table_name: str) -> list[str]:
+    """Return column names for the given table, excluding internal cols."""
+    try:
+        rows = conn.execute(f'DESCRIBE "{table_name}"').fetchall()
+        return [r[0] for r in rows if r[0] not in _EXCLUDED_COLS]
+    except Exception:
+        return []
+
+
+def get_clinical_attributes(conn, study_id: str) -> dict[str, str]:
+    """Return {column_name: source_table} for all clinical attribute columns."""
+    sample_cols = _get_table_columns(conn, f"{study_id}_sample")
+    patient_cols = _get_table_columns(conn, f"{study_id}_patient")
+
+    attrs: dict[str, str] = {}
+    for col in sample_cols:
+        attrs[col] = "sample"
+    for col in patient_cols:
+        if col not in attrs:
+            attrs[col] = "patient"
+    return attrs
+
+def build_filtered_sample_ids(conn, study_id: str, filter_json: str | None) -> list[str] | None:
+    """Legacy helper for non-refactored routes."""
+    sql, params = _build_filter_subquery(conn, study_id, filter_json)
+    try:
+        rows = conn.execute(sql, params).fetchall()
+        return [r[0] for r in rows]
+    except:
         return None

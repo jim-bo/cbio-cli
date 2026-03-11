@@ -29,7 +29,7 @@ router = APIRouter()
 
 _PIE_ATTRIBUTES = {
     "CLINICAL_SUMMARY", "DIAGNOSIS_DESCRIPTION", "OS_STATUS", "SAMPLE_TYPE",
-    "RACE", "SEX", "STAGE_HIGHEST", "ETHNICITY", "MSI_TYPE", "GENE_PANEL",
+    "RACE", "SEX", "GENDER", "STAGE_HIGHEST", "ETHNICITY", "MSI_TYPE", "GENE_PANEL",
     "SOMATIC_STATUS", "PRIOR_TREATMENT_TO_MSK_NLP", "SMOKING_HISTORY_NLP",
     "PRIOR_TREATMENT", "METASTATIC_SITE", "CANCER_STATUS",
     "DFS_STATUS", "PFS_STATUS",
@@ -199,13 +199,14 @@ async def study_summary(request: Request, id: str = ""):
     )
 
 
-@router.post("/study/summary/chart/clinical", response_class=HTMLResponse)
+@router.post("/study/summary/chart/clinical")
 async def chart_clinical(
     request: Request,
     study_id: Annotated[str, Form()],
     attribute_id: Annotated[str, Form()],
     chart_type: Annotated[str, Form()] = "pie",
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
@@ -213,6 +214,9 @@ async def chart_clinical(
     source = attrs.get(attribute_id, "sample")
     data = get_clinical_counts(conn, study_id, attribute_id, source, filtered_ids)
     inferred_type = _infer_chart_type(attribute_id, data)
+
+    if format == "json":
+        return {"data": data, "chart_type": inferred_type}
 
     template = "study_view/partials/charts/pie_chart.html" if inferred_type == "pie" else "study_view/partials/charts/table_chart.html"
     return request.app.state.templates.TemplateResponse(template, {
@@ -226,75 +230,107 @@ async def chart_clinical(
     })
 
 
-@router.post("/study/summary/chart/mutated-genes", response_class=HTMLResponse)
+@router.post("/study/summary/chart/mutated-genes")
 async def chart_mutated_genes(
     request: Request,
     study_id: Annotated[str, Form()],
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
     data = get_mutated_genes(conn, study_id, filtered_ids)
+    if format == "json":
+        return data
     return request.app.state.templates.TemplateResponse(
         "study_view/partials/charts/mutated_genes.html",
         {"request": request, "mutated_genes": data, "study_id": study_id, "filter_json": filter_json},
     )
 
 
-@router.post("/study/summary/chart/sv-genes", response_class=HTMLResponse)
+@router.post("/study/summary/chart/sv-genes")
 async def chart_sv_genes(
     request: Request,
     study_id: Annotated[str, Form()],
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
     data = get_sv_genes(conn, study_id, filtered_ids)
+    if format == "json":
+        return data
     return request.app.state.templates.TemplateResponse(
         "study_view/partials/charts/sv_genes.html",
         {"request": request, "sv_genes": data, "study_id": study_id, "filter_json": filter_json},
     )
 
 
-@router.post("/study/summary/chart/cna-genes", response_class=HTMLResponse)
+@router.post("/study/summary/chart/cna-genes")
 async def chart_cna_genes(
     request: Request,
     study_id: Annotated[str, Form()],
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
     data = get_cna_genes(conn, study_id, filtered_ids)
+    if format == "json":
+        return data
     return request.app.state.templates.TemplateResponse(
         "study_view/partials/charts/cna_genes.html",
         {"request": request, "cna_genes": data, "study_id": study_id, "filter_json": filter_json},
     )
 
 
-@router.post("/study/summary/chart/scatter", response_class=HTMLResponse)
+@router.post("/study/summary/chart/age")
+async def chart_age(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
+):
+    conn = request.app.state.db_conn
+    data = get_age_histogram(conn, study_id, filter_json)
+    if format == "json":
+        return data
+    return request.app.state.templates.TemplateResponse(
+        "study_view/partials/charts/histogram.html",
+        {"request": request, "age_histogram": data, "study_id": study_id, "filter_json": filter_json},
+    )
+
+
+@router.post("/study/summary/chart/scatter")
 async def chart_scatter(
     request: Request,
     study_id: Annotated[str, Form()],
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
     data = get_tmb_fga_scatter(conn, study_id, filtered_ids)
+    if format == "json":
+        return data
     return request.app.state.templates.TemplateResponse(
         "study_view/partials/charts/scatter_tmb_fga.html",
         {"request": request, "scatter_data": data, "study_id": study_id, "filter_json": filter_json},
     )
 
 
-@router.post("/study/summary/chart/km", response_class=HTMLResponse)
+@router.post("/study/summary/chart/km")
 async def chart_km(
     request: Request,
     study_id: Annotated[str, Form()],
     filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
 ):
     conn = request.app.state.db_conn
     filtered_ids = build_filtered_sample_ids(conn, study_id, filter_json)
     data = get_km_data(conn, study_id, filtered_ids)
+    if format == "json":
+        return data
     return request.app.state.templates.TemplateResponse(
         "study_view/partials/charts/km_plot.html",
         {"request": request, "km_curve": data, "study_id": study_id, "filter_json": filter_json},

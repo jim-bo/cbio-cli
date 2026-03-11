@@ -7,6 +7,7 @@
   transition: height 200ms ease;
 }
 .react-grid-item {
+  position: absolute;
   transition: all 200ms ease;
   transition-property: left, top;
 }
