@@ -5,7 +5,14 @@
 {% block content %}
 {% include "study_view/partials/study_header.html" %}
 {% include "study_view/partials/tab_bar.html" %}
-<div style="padding: 40px 20px; color: #999; font-size: 13px;">
-    Charts coming soon.
+
+<link rel="stylesheet" href="/static/css/dashboard.css">
+
+<div id="study-dashboard" data-study-id="{{ meta.study_id }}">
+    <div style="padding: 40px 20px; color: #999; font-size: 13px;">
+        Loading dashboard...
+    </div>
 </div>
+
+<script src="/static/js/study-dashboard.js"></script>
 {% endblock %}
