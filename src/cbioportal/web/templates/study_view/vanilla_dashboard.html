@@ -35,7 +35,7 @@
 {% block content %}
 <div class="dashboard-container">
     <div class="grid-stack">
-        <!-- Row 1: Primary Tables + Primary Pies -->
+        <!-- ROW 1 AREA -->
         <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="0">
             <div class="grid-stack-item-content">
                 {% with attr_id="CANCER_TYPE", title="Cancer Type" %}
@@ -53,7 +53,14 @@
         <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="8" gs-y="0">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-CLINICAL_SUMMARY">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Clinical Summary</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Clinical Summary</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-CLINICAL_SUMMARY" class="echarts-container"></div></div>
                 </div>
             </div>
@@ -61,13 +68,20 @@
         <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="10" gs-y="0">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-DIAGNOSIS_DESCRIPTION">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Diagnosis Description</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Diagnosis Description</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-DIAGNOSIS_DESCRIPTION" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
 
-        <!-- Row 2: Secondary Tables + More Pies -->
+        <!-- ROW 2 AREA -->
         <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="10">
             <div class="grid-stack-item-content">
                 {% with attr_id="ICD_O_HISTOLOGY_DESCRIPTION", title="ICD-O Histology Description" %}
@@ -85,7 +99,14 @@
         <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="8" gs-y="5">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-OS_STATUS">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Overall Survival Status</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Overall Survival Status</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-OS_STATUS" class="echarts-container"></div></div>
                 </div>
             </div>
@@ -93,13 +114,20 @@
         <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="10" gs-y="5">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-SAMPLE_TYPE">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Sample Type</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Sample Type</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-SAMPLE_TYPE" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
 
-        <!-- Row 3: Genomic Tables + Demographics -->
+        <!-- ROW 3 AREA -->
         <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="20">
             <div class="grid-stack-item-content">
                 {% include "study_view/partials/charts/vanilla_genomic_table.html" %}
@@ -110,37 +138,70 @@
                 {% include "study_view/partials/charts/vanilla_cna_table.html" %}
             </div>
         </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="8" gs-y="10">
+        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="8" gs-y="20">
+            <div class="grid-stack-item-content">
+                {% include "study_view/partials/charts/vanilla_sv_table.html" %}
+            </div>
+        </div>
+
+        <!-- ROW 4 AREA -->
+        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="0" gs-y="30">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-RACE">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Race</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Race</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-RACE" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="10" gs-y="10">
+        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="2" gs-y="30">
             <div class="grid-stack-item-content">
                 <div class="cbio-widget" id="widget-GENDER">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Sex</div></div>
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Sex</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
                     <div class="cbio-widget-content"><div id="chart-GENDER" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
-
-        <!-- Extra Rows for Scatter/KM/Histogram -->
-        <div class="grid-stack-item" gs-w="6" gs-h="12" gs-x="0" gs-y="30">
+        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="4" gs-y="30">
             <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-scatter">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Mutation Count vs. FGA</div></div>
-                    <div class="cbio-widget-content"><div id="chart-scatter" class="echarts-container"></div></div>
+                <div class="cbio-widget" id="widget-ETHNICITY">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Ethnicity</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-ETHNICITY" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
-        <div class="grid-stack-item" gs-w="6" gs-h="12" gs-x="6" gs-y="30">
+        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="6" gs-y="30">
             <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-km">
-                    <div class="cbio-widget-header"><div class="cbio-widget-title">Overall Survival</div></div>
-                    <div class="cbio-widget-content"><div id="chart-km" class="echarts-container"></div></div>
+                <div class="cbio-widget" id="widget-MSI_TYPE">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">MSI Type</div>
+                        <div class="cbio-widget-controls">
+                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-MSI_TYPE" class="echarts-container"></div></div>
                 </div>
             </div>
         </div>
@@ -159,21 +220,23 @@
         filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] } }
     };
 
-    const Charts = { Pies: {}, Bar: null, Scatter: null, KM: null };
+    const Charts = { Pies: {} };
 
     function broadcastUpdate() { window.dispatchEvent(new CustomEvent('cbio-filter-changed')); }
 
     function getFiltersForWidget(excludeAttrId) {
-        let filters = JSON.parse(JSON.stringify(DashboardState.filters));
-        if (excludeAttrId === 'mutated-genes') filters.mutationFilter.genes = [];
-        else if (excludeAttrId === 'sv-genes') filters.svFilter.genes = [];
-        else { filters.clinicalDataFilters = filters.clinicalDataFilters.filter(f => f.attributeId !== excludeAttrId); }
-        return filters;
+        let f = JSON.parse(JSON.stringify(DashboardState.filters));
+        if (excludeAttrId === 'mutated-genes') f.mutationFilter.genes = [];
+        else if (excludeAttrId === 'sv-genes') f.svFilter.genes = [];
+        else if (excludeAttrId === 'cna-genes') {} // TBD
+        else f.clinicalDataFilters = f.clinicalDataFilters.filter(x => x.attributeId !== excludeAttrId);
+        return f;
     }
 
     async function updateTableWidget(attrId) {
         const widget = document.getElementById(`widget-${attrId}`);
         const tbody = document.getElementById(`table-body-${attrId}`);
+        const selectAllBtn = document.getElementById(`btn-select-all-${attrId}`);
         if (!tbody) return;
         const loader = document.createElement('div'); loader.className = 'loading-overlay'; loader.innerText = '...';
         widget.querySelector('.cbio-widget-content').appendChild(loader);
@@ -187,6 +250,17 @@
             const data = json.data || [];
             const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
             const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+
+            // Update Select All Button logic
+            if (selectAllBtn) {
+                const allSelected = data.length > 0 && data.every(item => selectedValues.includes(item.value));
+                selectAllBtn.innerText = allSelected ? 'Deselect all' : 'Select all';
+                selectAllBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleSelectAll(attrId, data, allSelected);
+                };
+            }
+
             tbody.innerHTML = '';
             data.forEach(item => {
                 const isSelected = selectedValues.includes(item.value);
@@ -194,13 +268,25 @@
                 if (isSelected) tr.className = 'selected';
                 tr.innerHTML = `
                     <td><div class="cbio-color-swatch" style="background-color: ${item.color};"></div><span class="cbio-table-label" title="${item.value}">${item.value}</span></td>
-                    <td class="cbio-table-count"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}>${item.count.toLocaleString()}</td>
+                    <td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.count.toLocaleString()}</span></div></td>
                     <td class="cbio-table-freq">${item.pct}%</td>
                 `;
                 tr.onclick = (e) => { e.stopPropagation(); toggleFilter(attrId, item.value); };
                 tbody.appendChild(tr);
             });
         } finally { loader.remove(); }
+    }
+
+    function toggleSelectAll(attrId, data, shouldDeselect) {
+        if (shouldDeselect) {
+            DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId);
+        } else {
+            const values = data.map(item => ({ value: item.value }));
+            let cf = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+            if (cf) cf.values = values;
+            else DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: values });
+        }
+        broadcastUpdate();
     }
 
     async function updatePieWidget(attrId) {
@@ -237,6 +323,7 @@
         const widget = document.getElementById(`widget-mutated-genes`);
         const tbody = document.getElementById(`table-body-mutated-genes`);
         const titleEl = document.getElementById(`title-mutated-genes`);
+        if (!tbody) return;
         try {
             const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('mutated-genes')));
             const response = await fetch('/study/summary/chart/mutated-genes?format=json', { method: 'POST', body: formData });
@@ -247,22 +334,18 @@
             data.forEach(item => {
                 const isSelected = selectedGenes.includes(item.gene);
                 const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
-                tr.innerHTML = `
-                    <td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td>
-                    <td style="text-align: right;">${item.n_mut.toLocaleString()}</td>
-                    <td class="cbio-table-count"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}>${item.n_samples.toLocaleString()}</td>
-                    <td class="cbio-table-freq">${item.freq}%</td>
-                `;
+                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_mut.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${item.freq}%</td>`;
                 tr.onclick = (e) => { e.stopPropagation(); toggleMutationFilter(item.gene); };
                 tbody.appendChild(tr);
             });
-        } catch (err) {}
+        } catch (e) {}
     }
 
     async function updateCNATableWidget() {
         const widget = document.getElementById(`widget-cna-genes`);
         const tbody = document.getElementById(`table-body-cna-genes`);
         const titleEl = document.getElementById(`title-cna-genes`);
+        if (!tbody) return;
         try {
             const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('cna-genes')));
             const response = await fetch('/study/summary/chart/cna-genes?format=json', { method: 'POST', body: formData });
@@ -271,56 +354,41 @@
             tbody.innerHTML = '';
             data.forEach(item => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td>
-                    <td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td>
-                    <td class="cbio-table-count">${item.n_samples.toLocaleString()}</td>
-                    <td class="cbio-table-freq">${item.freq}%</td>
-                `;
+                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox"><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${item.freq}%</td>`;
                 tbody.appendChild(tr);
             });
-        } catch (err) {}
+        } catch (e) {}
     }
 
-    async function updateScatterWidget() {
-        const chartDom = document.getElementById('chart-scatter');
-        if (!chartDom) return;
-        if (!Charts.Scatter) Charts.Scatter = echarts.init(chartDom);
+    async function updateSVTableWidget() {
+        const widget = document.getElementById(`widget-sv-genes`);
+        const tbody = document.getElementById(`table-body-sv-genes`);
+        const titleEl = document.getElementById(`title-sv-genes`);
+        if (!tbody) return;
         try {
-            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('scatter')));
-            const response = await fetch('/study/summary/chart/scatter?format=json', { method: 'POST', body: formData });
-            let data = await response.json() || [];
-            Charts.Scatter.setOption({
-                grid: { top: 30, right: 20, bottom: 40, left: 50 },
-                xAxis: { name: 'FGA', type: 'value' }, yAxis: { name: 'Mut Count', type: 'value' },
-                series: [{ symbolSize: 5, data: data.map(d => [d.fga, d.mutation_count]), type: 'scatter', itemStyle: { color: '#2986E2', opacity: 0.6 } }]
-            });
-        } catch (err) {}
-    }
-
-    async function updateKMWidget() {
-        const chartDom = document.getElementById('chart-km');
-        if (!chartDom) return;
-        if (!Charts.KM) Charts.KM = echarts.init(chartDom);
-        try {
-            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(DashboardState.filters));
-            const response = await fetch('/study/summary/chart/km?format=json', { method: 'POST', body: formData });
+            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('sv-genes')));
+            const response = await fetch('/study/summary/chart/sv-genes?format=json', { method: 'POST', body: formData });
             const data = await response.json() || [];
-            Charts.KM.setOption({
-                grid: { top: 30, right: 20, bottom: 40, left: 50 },
-                xAxis: { name: 'Months', type: 'value' }, yAxis: { name: 'Survival', type: 'value', min: 0, max: 1 },
-                series: [{ data: data.map(d => [d.time, d.survival]), type: 'line', step: 'end', symbol: 'none', lineStyle: { color: '#2986E2', width: 2 } }]
+            titleEl.innerText = `Structural Variant Genes (${DashboardState.nSamples} profiled samples)`;
+            const selectedGenes = DashboardState.filters.svFilter.genes;
+            tbody.innerHTML = '';
+            data.forEach(item => {
+                const isSelected = selectedGenes.includes(item.gene);
+                const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
+                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_sv.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${item.freq}%</td>`;
+                tr.onclick = (e) => { e.stopPropagation(); toggleSVFilter(item.gene); };
+                tbody.appendChild(tr);
             });
-        } catch (err) {}
+        } catch (e) {}
     }
 
     function toggleFilter(attrId, value) {
-        let currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
-        if (!currentFilter) { DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: [{ value }] }); } 
+        let cf = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+        if (!cf) { DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: [{ value }] }); } 
         else {
-            const valIdx = currentFilter.values.findIndex(v => v.value === value);
-            if (valIdx > -1) { currentFilter.values.splice(valIdx, 1); if (currentFilter.values.length === 0) DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId); } 
-            else { currentFilter.values.push({ value }); }
+            const idx = cf.values.findIndex(v => v.value === value);
+            if (idx > -1) { cf.values.splice(idx, 1); if (cf.values.length === 0) DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId); } 
+            else { cf.values.push({ value }); }
         }
         broadcastUpdate();
     }
@@ -332,17 +400,25 @@
         broadcastUpdate();
     }
 
+    function toggleSVFilter(gene) {
+        const idx = DashboardState.filters.svFilter.genes.indexOf(gene);
+        if (idx > -1) DashboardState.filters.svFilter.genes.splice(idx, 1);
+        else DashboardState.filters.svFilter.genes.push(gene);
+        broadcastUpdate();
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
-        const grid = GridStack.init({ cellHeight: 30, margin: 10, draggable: { handle: '.cbio-widget-header' } });
+        const grid = GridStack.init({ cellHeight: 30, margin: 5, draggable: { handle: '.cbio-widget-header' } });
+        const pies = ['CLINICAL_SUMMARY', 'DIAGNOSIS_DESCRIPTION', 'OS_STATUS', 'SAMPLE_TYPE', 'RACE', 'GENDER', 'MSI_TYPE', 'ETHNICITY', 'STAGE_HIGHEST_RECORDED'];
+        const tables = ['CANCER_TYPE', 'CLINICAL_GROUP', 'ICD_O_HISTOLOGY_DESCRIPTION', 'PATHOLOGICAL_GROUP'];
         function updateAll() {
-            updateTableWidget('CANCER_TYPE'); updateTableWidget('CLINICAL_GROUP'); updateTableWidget('ICD_O_HISTOLOGY_DESCRIPTION'); updateTableWidget('PATHOLOGICAL_GROUP');
-            updatePieWidget('CLINICAL_SUMMARY'); updatePieWidget('DIAGNOSIS_DESCRIPTION'); updatePieWidget('OS_STATUS'); updatePieWidget('SAMPLE_TYPE'); updatePieWidget('RACE'); updatePieWidget('GENDER');
-            updateGenomicTableWidget(); updateCNATableWidget(); updateScatterWidget(); updateKMWidget();
+            tables.forEach(updateTableWidget); pies.forEach(updatePieWidget);
+            updateGenomicTableWidget(); updateCNATableWidget(); updateSVTableWidget();
         }
         updateAll();
         window.addEventListener('cbio-filter-changed', updateAll);
-        const resizeHandler = () => { Object.values(Charts.Pies).forEach(c => c.resize()); if (Charts.Scatter) Charts.Scatter.resize(); if (Charts.KM) Charts.KM.resize(); };
-        grid.on('resizestop', resizeHandler); window.addEventListener('resize', resizeHandler);
+        const resizer = () => { Object.values(Charts.Pies).forEach(c => c.resize()); };
+        grid.on('resizestop', resizer); window.addEventListener('resize', resizer);
     });
 </script>
 {% endblock %}

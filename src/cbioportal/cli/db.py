@@ -1,4 +1,6 @@
 import typer
+from pathlib import Path
+from typing import Optional
 from cbioportal.core import loader, database
 
 app = typer.Typer(help="Database maintenance commands")
@@ -155,6 +157,33 @@ def sync_oncotree():
     """Fetch latest OncoTree data and sync to the database."""
     conn = database.get_connection()
     loader.sync_oncotree(conn)
+    conn.close()
+
+@app.command(name="sync-gene-panels")
+def sync_gene_panels(
+    json_path: Optional[Path] = typer.Option(None, help="Path to gene-panels.json (defaults to auto-discovery from CBIO_DATAHUB)")
+):
+    """Load gene panel definitions from gene-panels.json into the database."""
+    conn = database.get_connection()
+    loader.load_gene_panel_definitions(conn, json_path)
+    conn.close()
+
+@app.command(name="sync-gene-reference")
+def sync_gene_reference(
+    genes_json_path: Optional[Path] = typer.Option(None, help="Path to genes.json (defaults to CBIO_DATAHUB/.circleci/portalinfo/genes.json)")
+):
+    """Load gene reference (entrezGeneId → hugoGeneSymbol) into the database."""
+    conn = database.get_connection()
+    loader.load_gene_reference(conn, genes_json_path)
+    conn.close()
+
+@app.command(name="sync-gene-symbol-updates")
+def sync_gene_symbol_updates(
+    gene_update_md: Optional[Path] = typer.Option(None, help="Path to gene-update.md (defaults to CBIO_DATAHUB/seedDB/gene-update-list/gene-update.md)")
+):
+    """Load gene symbol update mappings (old alias → canonical) into the database."""
+    conn = database.get_connection()
+    loader.load_gene_symbol_updates(conn, gene_update_md)
     conn.close()
 
 if __name__ == "__main__":

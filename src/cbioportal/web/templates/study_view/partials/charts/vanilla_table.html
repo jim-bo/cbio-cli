@@ -1,7 +1,7 @@
-<div class="cbio-widget" id="widget-CANCER_TYPE">
+<div class="cbio-widget" id="widget-{{ attr_id }}">
     <!-- Header -->
     <div class="cbio-widget-header">
-        <div class="cbio-widget-title">Cancer Type</div>
+        <div class="cbio-widget-title" id="title-{{ attr_id }}">{{ title }}</div>
         <div class="cbio-widget-controls">
             <button class="cbio-widget-btn" title="Info"><i class="fa fa-info-circle"></i></button>
             <button class="cbio-widget-btn" title="Close"><i class="fa fa-times"></i></button>
@@ -19,7 +19,7 @@
                     <th class="cbio-table-freq">Freq <i class="fa fa-caret-down"></i></th>
                 </tr>
             </thead>
-            <tbody id="table-body-CANCER_TYPE">
+            <tbody id="table-body-{{ attr_id }}">
                 <!-- Dynamic Rows -->
             </tbody>
         </table>
@@ -28,7 +28,9 @@
     <!-- Footer -->
     <div class="cbio-widget-footer">
         <input type="text" class="cbio-search-input" placeholder="Search...">
-        <button class="cbio-footer-btn">Select all</button>
+        {% if attr_id == "CLINICAL_GROUP" or attr_id == "PATHOLOGICAL_GROUP" or attr_id == "CANCER_TYPE" or attr_id == "ICD_O_HISTOLOGY_DESCRIPTION" %}
+        <button class="cbio-footer-btn" id="btn-select-all-{{ attr_id }}">Select all</button>
+        {% endif %}
     </div>
 
     <!-- Resize Handle -->

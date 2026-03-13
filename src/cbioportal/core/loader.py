@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import psutil
 import duckdb
@@ -212,6 +213,7 @@ def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: b
             table_name = f'"{raw_study_id}_mutations"'
             conn.execute(f"DROP TABLE IF EXISTS {table_name}")
             conn.execute(f"CREATE TABLE {table_name} AS SELECT '{raw_study_id}' as study_id, * FROM read_csv('{mutation_file}', delim='\t', header=True, comment='#', null_padding=True, ignore_errors=True)")
+            normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
         if load_sv and sv_file.exists():
             table_name = f'"{raw_study_id}_sv"'
@@ -240,6 +242,7 @@ def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: b
                 WHERE cna_value IS NOT NULL AND cna_value != 0
             """
             conn.execute(unpivot_sql)
+            normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
         if load_timeline and timeline_files:
             for timeline_file in timeline_files:
@@ -268,10 +271,203 @@ def load_study(conn, study_path: Path, load_mutations: bool = False, load_cna: b
         if list(study_path.glob("data_methylation*.txt")): data_types.append("methylation")
         if (study_path / "data_timeline_treatment.txt").exists(): data_types.append("treatment")
         if (study_path / "data_cna_hg19.seg").exists() or list(study_path.glob("data_cna_*.seg")): data_types.append("segment")
+        if gene_panel_file.exists(): data_types.append("gene_panel")
         if data_types:
             conn.execute("CREATE TABLE IF NOT EXISTS study_data_types (study_id VARCHAR NOT NULL, data_type VARCHAR NOT NULL, PRIMARY KEY (study_id, data_type))")
             for dt in data_types:
                 conn.execute("INSERT OR REPLACE INTO study_data_types VALUES (?, ?)", (raw_study_id, dt))
+
+def load_gene_reference(conn, genes_json_path: Path = None):
+    """Load gene reference table from genes.json (entrezGeneId → hugoGeneSymbol)."""
+    if genes_json_path is None:
+        datahub = os.getenv("CBIO_DATAHUB")
+        if not datahub:
+            typer.echo("Error: CBIO_DATAHUB env var not set and no path provided.")
+            raise typer.Exit(code=1)
+        genes_json_path = Path(datahub) / ".circleci" / "portalinfo" / "genes.json"
+
+    if not genes_json_path.exists():
+        typer.echo(f"Error: genes.json not found at {genes_json_path}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Loading gene reference from {genes_json_path}...")
+    with open(genes_json_path, "r") as f:
+        genes = json.load(f)
+
+    conn.execute("DROP TABLE IF EXISTS gene_reference")
+    conn.execute("""
+        CREATE TABLE gene_reference (
+            entrez_gene_id INTEGER PRIMARY KEY,
+            hugo_gene_symbol VARCHAR,
+            gene_type VARCHAR
+        )
+    """)
+
+    rows = [
+        (g["entrezGeneId"], g["hugoGeneSymbol"], g.get("type"))
+        for g in genes
+        if g.get("entrezGeneId") is not None
+    ]
+    conn.executemany("INSERT OR REPLACE INTO gene_reference VALUES (?, ?, ?)", rows)
+    typer.echo(f"Successfully loaded {len(rows)} gene reference entries.")
+
+
+def load_gene_symbol_updates(conn, gene_update_md: Path = None):
+    """Parse gene-update.md and populate gene_symbol_updates table."""
+    if gene_update_md is None:
+        datahub = os.getenv("CBIO_DATAHUB")
+        if not datahub:
+            typer.echo("Error: CBIO_DATAHUB env var not set and no path provided.")
+            raise typer.Exit(code=1)
+        gene_update_md = Path(datahub) / "seedDB" / "gene-update-list" / "gene-update.md"
+
+    if not gene_update_md.exists():
+        typer.echo(f"Warning: gene-update.md not found at {gene_update_md}, skipping.")
+        return
+
+    import re
+    conn.execute("DROP TABLE IF EXISTS gene_symbol_updates")
+    conn.execute("""
+        CREATE TABLE gene_symbol_updates (
+            old_symbol VARCHAR PRIMARY KEY,
+            new_symbol VARCHAR
+        )
+    """)
+
+    pattern = re.compile(r'^(\S+)\s+-?\d+\s+->\s+(\S+)\s+-?\d+')
+    rows = {}
+    in_code_block = False
+    with open(gene_update_md, "r") as f:
+        for line in f:
+            line = line.rstrip()
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block:
+                m = pattern.match(line.strip())
+                if m:
+                    old_sym, new_sym = m.group(1), m.group(2)
+                    if old_sym != new_sym:
+                        rows[old_sym] = new_sym
+
+    if rows:
+        conn.executemany(
+            "INSERT OR REPLACE INTO gene_symbol_updates VALUES (?, ?)",
+            list(rows.items())
+        )
+    typer.echo(f"Loaded {len(rows)} gene symbol update entries.")
+
+
+def normalize_hugo_symbols(conn, study_id: str):
+    """Normalize Hugo symbols in mutations and CNA tables using gene_reference and gene_symbol_updates."""
+    # Guard: only run if gene_reference exists and has rows
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM gene_reference").fetchone()[0]
+        if count == 0:
+            return
+    except Exception:
+        return
+
+    tables_res = conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_type = 'BASE TABLE'"
+    ).fetchall()
+    existing_tables = {t[0] for t in tables_res}
+
+    has_updates = "gene_symbol_updates" in existing_tables
+
+    mutations_table = f"{study_id}_mutations"
+    cna_table = f"{study_id}_cna"
+
+    # Pass 3 (CNA only): derive alias map from this study's mutations table *before*
+    # mutations are normalized, so stale symbols (e.g. MLL2) are still present.
+    if cna_table in existing_tables and mutations_table in existing_tables:
+        conn.execute(f"""
+            UPDATE "{cna_table}"
+            SET hugo_symbol = alias_map.canonical
+            FROM (
+                SELECT DISTINCT
+                    "{mutations_table}".Hugo_Symbol AS old_symbol,
+                    gr.hugo_gene_symbol            AS canonical
+                FROM "{mutations_table}"
+                JOIN gene_reference gr
+                  ON TRY_CAST("{mutations_table}".Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id
+                WHERE TRY_CAST("{mutations_table}".Entrez_Gene_Id AS INTEGER) > 0
+                  AND "{mutations_table}".Hugo_Symbol IS DISTINCT FROM gr.hugo_gene_symbol
+            ) alias_map
+            WHERE "{cna_table}".hugo_symbol = alias_map.old_symbol
+        """)
+
+    if mutations_table in existing_tables:
+        # Pass 1: normalize by Entrez Gene ID.
+        # Qualify columns with table name to avoid case-insensitive ambiguity with gene_reference.entrez_gene_id
+        conn.execute(f"""
+            UPDATE "{mutations_table}"
+            SET Hugo_Symbol = gr.hugo_gene_symbol
+            FROM gene_reference gr
+            WHERE TRY_CAST("{mutations_table}".Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id
+              AND TRY_CAST("{mutations_table}".Entrez_Gene_Id AS INTEGER) > 0
+              AND "{mutations_table}".Hugo_Symbol IS DISTINCT FROM gr.hugo_gene_symbol
+        """)
+        # Pass 2: normalize by symbol map (covers old/invalid Entrez IDs)
+        if has_updates:
+            conn.execute(f"""
+                UPDATE "{mutations_table}"
+                SET Hugo_Symbol = su.new_symbol
+                FROM gene_symbol_updates su
+                WHERE "{mutations_table}".Hugo_Symbol = su.old_symbol
+            """)
+
+    if cna_table in existing_tables:
+        # CNA symbol map normalization (covers cases not bridged via mutations)
+        if has_updates:
+            conn.execute(f"""
+                UPDATE "{cna_table}"
+                SET hugo_symbol = su.new_symbol
+                FROM gene_symbol_updates su
+                WHERE hugo_symbol = su.old_symbol
+            """)
+
+
+def load_gene_panel_definitions(conn, json_path: Path = None):
+    """Load gene panel definitions from gene-panels.json into DuckDB."""
+    if json_path is None:
+        datahub = os.getenv("CBIO_DATAHUB")
+        if not datahub:
+            typer.echo("Error: CBIO_DATAHUB env var not set and no --json-path provided.")
+            raise typer.Exit(code=1)
+        json_path = Path(datahub) / ".circleci" / "portalinfo" / "gene-panels.json"
+
+    if not json_path.exists():
+        typer.echo(f"Error: Gene panels JSON not found at {json_path}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Loading gene panel definitions from {json_path}...")
+    with open(json_path, "r") as f:
+        panels = json.load(f)
+
+    conn.execute("DROP TABLE IF EXISTS gene_panel_definitions")
+    conn.execute("""
+        CREATE TABLE gene_panel_definitions (
+            panel_id VARCHAR,
+            description VARCHAR,
+            hugo_gene_symbol VARCHAR,
+            entrez_gene_id INTEGER,
+            PRIMARY KEY (panel_id, hugo_gene_symbol)
+        )
+    """)
+
+    rows = []
+    for panel in panels:
+        panel_id = panel["genePanelId"]
+        description = panel.get("description", "")
+        for gene in panel.get("genes", []):
+            rows.append((panel_id, description, gene["hugoGeneSymbol"], gene.get("entrezGeneId")))
+
+    conn.executemany("INSERT OR REPLACE INTO gene_panel_definitions VALUES (?, ?, ?, ?)", rows)
+    panel_count = len(panels)
+    gene_count = len(rows)
+    typer.echo(f"Successfully loaded {panel_count} gene panels ({gene_count} gene entries).")
+
 
 def create_global_views(conn):
     """Refresh unified views across all loaded study tables."""
@@ -315,6 +511,22 @@ def create_global_views(conn):
 def load_all_studies(conn, datahub_path: Path, limit: int = None, offset: int = 0, load_mutations: bool = False, load_cna: bool = False, load_sv: bool = False, load_timeline: bool = False):
     """Iterate through studies and load them incrementally."""
     monitor = Monitor()
+
+    # Auto-load gene reference tables if CBIO_DATAHUB is set and tables are absent
+    datahub = os.getenv("CBIO_DATAHUB")
+    if datahub:
+        existing = {t[0] for t in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='main'"
+        ).fetchall()}
+        if "gene_reference" not in existing:
+            try:
+                load_gene_reference(conn, Path(datahub) / ".circleci" / "portalinfo" / "genes.json")
+                load_gene_symbol_updates(conn, Path(datahub) / "seedDB" / "gene-update-list" / "gene-update.md")
+            except SystemExit:
+                typer.echo("Warning: Could not load gene reference tables. Hugo symbol normalization will be skipped.")
+            except Exception as e:
+                typer.echo(f"Warning: Could not load gene reference tables: {e}. Hugo symbol normalization will be skipped.")
+
     all_studies = discover_studies(datahub_path)
     start, end = offset, (offset + limit) if limit else len(all_studies)
     studies = all_studies[start:end]
