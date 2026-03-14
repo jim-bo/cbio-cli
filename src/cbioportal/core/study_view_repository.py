@@ -1106,19 +1106,29 @@ _DATA_TYPE_DISPLAY = {
     "mrna":        "mRNA Expression",
     "protein":     "Protein expression (RPPA)",
     "methylation": "DNA Methylation",
-    "treatment":   "Treatment",
-    "segment":     "Copy Number Segments",
 }
 
-_DATA_TYPE_TABLE = {
+# Molecular data types to show (excludes gene_panel, segment, treatment)
+_MOLECULAR_DATA_TYPES = {"mutation", "cna", "sv", "mrna", "protein", "methylation"}
+
+# Display order matching legacy portal
+_DATA_TYPE_ORDER = ["mutation", "cna", "sv", "mrna", "protein", "methylation"]
+
+# gene_panel table column that tracks which samples were profiled for each data type
+# (equivalent to legacy sample_profile join table)
+_DATA_TYPE_PANEL_COL = {
     "mutation": "mutations",
     "cna":      "cna",
-    "sv":       "sv",
+    "sv":       "structural_variants",
 }
 
 
 def get_data_types_chart(conn, study_id: str, filter_json: str | None) -> list[dict]:
-    """Return list of {data_type, display_name, count, freq} for each data type in the study."""
+    """Return list of {data_type, display_name, count, freq} for each data type in the study.
+
+    Counts profiled samples from the gene_panel table (mirrors legacy sample_profile logic).
+    Only shows molecular data types (mutation/cna/sv/mrna/protein/methylation).
+    """
     filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
     try:
         total = conn.execute(
@@ -1128,22 +1138,29 @@ def get_data_types_chart(conn, study_id: str, filter_json: str | None) -> list[d
         total = 0
 
     try:
-        data_types = [r[0] for r in conn.execute(
-            "SELECT data_type FROM study_data_types WHERE study_id = ? ORDER BY data_type",
+        all_data_types = {r[0] for r in conn.execute(
+            "SELECT data_type FROM study_data_types WHERE study_id = ?",
             (study_id,),
-        ).fetchall()]
+        ).fetchall()}
     except Exception:
-        data_types = []
+        all_data_types = set()
+
+    # Only show molecular profile types, in canonical order
+    data_types = [dt for dt in _DATA_TYPE_ORDER if dt in all_data_types & _MOLECULAR_DATA_TYPES]
 
     result = []
     for dt in data_types:
         display_name = _DATA_TYPE_DISPLAY.get(dt, dt)
-        table_suffix = _DATA_TYPE_TABLE.get(dt)
-        if table_suffix:
+        panel_col = _DATA_TYPE_PANEL_COL.get(dt)
+        if panel_col:
+            # Count filtered samples that have a non-null panel entry for this data type.
+            # This mirrors the legacy sample_profile count (profiled samples, not just
+            # those with detected alterations).
             try:
                 count = conn.execute(
-                    f'SELECT COUNT(DISTINCT sample_id) FROM "{study_id}_{table_suffix}" '
-                    f'WHERE sample_id IN ({filter_sql})',
+                    f'SELECT COUNT(*) FROM "{study_id}_gene_panel" '
+                    f'WHERE SAMPLE_ID IN ({filter_sql}) '
+                    f"AND {panel_col} IS NOT NULL AND {panel_col} != ''",
                     params,
                 ).fetchone()[0]
             except Exception:
