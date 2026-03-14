@@ -2,9 +2,11 @@ import duckdb
 import os
 from pathlib import Path
 
+DEFAULT_DB_PATH = Path("data/cbioportal.duckdb")
+
 def get_db_path() -> Path:
     """Get the database path from environment or default."""
-    return Path(os.getenv("CBIO_DB_PATH", "data/cbioportal.duckdb"))
+    return Path(os.getenv("CBIO_DB_PATH", DEFAULT_DB_PATH))
 
 def get_connection(db_path: Path = None, read_only: bool = False):
     """Get a connection to the DuckDB database."""
