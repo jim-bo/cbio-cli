@@ -886,6 +886,280 @@ def get_clinical_attributes(conn, study_id: str) -> dict[str, str]:
             attrs[col] = "patient"
     return attrs
 
+# ---------------------------------------------------------------------------
+# Charts metadata — drive the dynamic dashboard
+# ---------------------------------------------------------------------------
+
+_CHART_DIMS: dict[str, dict] = {
+    "pie":   {"w": 2, "h": 5},
+    "bar":   {"w": 4, "h": 5},
+    "table": {"w": 4, "h": 10},
+}
+
+_PIE_TO_TABLE_THRESHOLD = 20  # matches cBioPortal StudyViewConfig.ts `pieToTable`
+
+# Canonical priority overrides for well-known attrs (used in fallback path)
+_PRIORITY_OVERRIDES: dict[str, int] = {
+    "CANCER_TYPE":          3000,
+    "CANCER_TYPE_DETAILED": 2000,
+    "GENDER":               9,
+    "SEX":                  9,
+    "AGE":                  9,
+    "CURRENT_AGE_DEID":     9,
+    "DIAGNOSIS_AGE":        9,
+}
+
+
+def _resolve_chart_type(attr_id: str, datatype: str) -> str:
+    """Map attribute ID + datatype → chart_type ('pie' | 'bar' | 'table')."""
+    if attr_id in ("CANCER_TYPE", "CANCER_TYPE_DETAILED"):
+        return "table"
+    if datatype in ("STRING", "BOOLEAN"):
+        return "pie"
+    if datatype == "NUMBER":
+        return "bar"
+    return "pie"
+
+
+def _count_distinct_for_attrs(
+    conn, study_id: str, attrs: list[tuple[str, str]]
+) -> dict[str, int]:
+    """Return {attr_id: distinct_count} for the given (attr_id, source) pairs.
+
+    attrs is a list of (attr_id, source) where source is 'patient' or 'sample'.
+    Uses one query per source table.
+    """
+    from collections import defaultdict
+    by_source: dict[str, list[str]] = defaultdict(list)
+    for attr_id, source in attrs:
+        by_source[source].append(attr_id)
+
+    result: dict[str, int] = {}
+    for source, col_list in by_source.items():
+        table = f'"{study_id}_{source}"'
+        selects = ", ".join(
+            f'COUNT(DISTINCT "{col}") AS "{col}"' for col in col_list
+        )
+        try:
+            row = conn.execute(f"SELECT {selects} FROM {table}").fetchone()
+            if row:
+                for col, val in zip(col_list, row):
+                    result[col] = val or 0
+        except Exception:
+            pass
+    return result
+
+
+def get_charts_meta(conn, study_id: str) -> list[dict]:
+    """Return ordered chart metadata list for the study dashboard.
+
+    Each item: {attr_id, display_name, chart_type, patient_attribute, priority, w, h}.
+
+    Primary source: ``clinical_attribute_meta`` table (populated at load time).
+    Fallback: synthesise metadata from DuckDB column types via get_clinical_attributes().
+    Special genomic charts (_mutated_genes, _cna_genes, _sv_genes, _scatter, _km)
+    are appended based on ``study_data_types``.
+    """
+    charts: list[dict] = []
+
+    # --- Primary path: clinical_attribute_meta table ---
+    has_meta_rows = False
+    try:
+        rows = conn.execute(
+            """
+            SELECT attr_id, display_name, datatype, patient_attribute, priority, description
+            FROM clinical_attribute_meta
+            WHERE study_id = ? AND priority != 0
+            ORDER BY priority DESC
+            """,
+            (study_id,),
+        ).fetchall()
+        has_meta_rows = bool(rows)
+        for attr_id, display_name, datatype, patient_attribute, priority, description in rows:
+            chart_type = _resolve_chart_type(attr_id, datatype or "STRING")
+            dims = _CHART_DIMS[chart_type]
+            charts.append({
+                "attr_id":           attr_id,
+                "display_name":      display_name or attr_id,
+                "chart_type":        chart_type,
+                "patient_attribute": bool(patient_attribute),
+                "priority":          priority,
+                "description":       description,
+                **dims,
+            })
+        # Promote pie → table for high-cardinality STRING attrs
+        _pie_string_attrs = [
+            (c["attr_id"], "patient" if c["patient_attribute"] else "sample")
+            for c in charts if c["chart_type"] == "pie"
+        ]
+        if _pie_string_attrs:
+            distinct_counts = _count_distinct_for_attrs(conn, study_id, _pie_string_attrs)
+            for c in charts:
+                if c["chart_type"] == "pie" and distinct_counts.get(c["attr_id"], 0) > _PIE_TO_TABLE_THRESHOLD:
+                    c["chart_type"] = "table"
+                    c.update(_CHART_DIMS["table"])
+    except Exception:
+        pass
+
+    # --- Fallback: synthesise from column introspection ---
+    if not has_meta_rows:
+        attrs = get_clinical_attributes(conn, study_id)
+        for attr_id, source in attrs.items():
+            priority = _PRIORITY_OVERRIDES.get(attr_id, 1)
+            # Guess datatype from DuckDB DESCRIBE output
+            try:
+                desc = conn.execute(f'DESCRIBE "{study_id}_{source}"').fetchall()
+                col_types = {r[0]: r[1].upper() for r in desc}
+                dtype_raw = col_types.get(attr_id, "VARCHAR")
+            except Exception:
+                dtype_raw = "VARCHAR"
+            if any(t in dtype_raw for t in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "BIGINT", "HUGEINT")):
+                datatype = "NUMBER"
+            else:
+                datatype = "STRING"
+            chart_type = _resolve_chart_type(attr_id, datatype)
+            dims = _CHART_DIMS[chart_type]
+            charts.append({
+                "attr_id":           attr_id,
+                "display_name":      attr_id.replace("_", " ").title(),
+                "chart_type":        chart_type,
+                "patient_attribute": source == "patient",
+                "priority":          priority,
+                "description":       None,
+                **dims,
+            })
+        # Promote pie → table for high-cardinality STRING attrs
+        _pie_string_attrs_fb = [
+            (c["attr_id"], "patient" if c["patient_attribute"] else "sample")
+            for c in charts if c["chart_type"] == "pie"
+        ]
+        if _pie_string_attrs_fb:
+            distinct_counts_fb = _count_distinct_for_attrs(conn, study_id, _pie_string_attrs_fb)
+            for c in charts:
+                if c["chart_type"] == "pie" and distinct_counts_fb.get(c["attr_id"], 0) > _PIE_TO_TABLE_THRESHOLD:
+                    c["chart_type"] = "table"
+                    c.update(_CHART_DIMS["table"])
+
+    # --- Append special genomic charts based on study_data_types ---
+    try:
+        data_types = {r[0] for r in conn.execute(
+            "SELECT data_type FROM study_data_types WHERE study_id = ?", (study_id,)
+        ).fetchall()}
+    except Exception:
+        data_types = set()
+
+    # For KM: check whether OS columns exist regardless of priority
+    all_attrs = set(get_clinical_attributes(conn, study_id).keys())
+
+    if "mutation" in data_types:
+        charts.append({
+            "attr_id": "_mutated_genes", "display_name": "Mutated Genes",
+            "chart_type": "_mutated_genes", "patient_attribute": False,
+            "priority": 0, "w": 4, "h": 10,
+            "description": "Genes with somatic mutations in the study cohort.",
+        })
+    if "cna" in data_types:
+        charts.append({
+            "attr_id": "_cna_genes", "display_name": "CNA Genes",
+            "chart_type": "_cna_genes", "patient_attribute": False,
+            "priority": 0, "w": 4, "h": 10,
+            "description": "Genes with copy number alterations (amplification or deep deletion) detected in the cohort.",
+        })
+    if "sv" in data_types:
+        charts.append({
+            "attr_id": "_sv_genes", "display_name": "Structural Variant Genes",
+            "chart_type": "_sv_genes", "patient_attribute": False,
+            "priority": 0, "w": 4, "h": 10,
+            "description": "Genes involved in structural variants (fusions, rearrangements) detected in the cohort.",
+        })
+    if "mutation" in data_types and "cna" in data_types:
+        charts.append({
+            "attr_id": "_scatter", "display_name": "Mutation Count vs Fraction Genome Altered",
+            "chart_type": "_scatter", "patient_attribute": False,
+            "priority": 0, "w": 4, "h": 10,
+            "description": "Scatter plot of tumor mutational burden (mutation count) vs fraction of genome altered (FGA) per sample.",
+        })
+    if data_types:
+        charts.append({
+            "attr_id": "_data_types", "display_name": "Data Types",
+            "chart_type": "_data_types", "patient_attribute": False,
+            "priority": 1000, "w": 4, "h": 10,
+            "description": "Molecular data types available in this study.",
+        })
+
+    if "OS_MONTHS" in all_attrs and "OS_STATUS" in all_attrs:
+        charts.append({
+            "attr_id": "_km", "display_name": "KM Plot: Overall (months)",
+            "chart_type": "_km", "patient_attribute": False,
+            "priority": 400, "w": 4, "h": 10,
+            "description": "Kaplan-Meier overall survival curve for the current cohort (OS_MONTHS / OS_STATUS).",
+        })
+
+    charts.sort(key=lambda c: (-c["priority"], c["attr_id"]))
+    return charts
+
+
+_DATA_TYPE_DISPLAY = {
+    "mutation":    "Mutations",
+    "cna":         "Putative copy-number alterations from GISTIC",
+    "sv":          "Structural Variants",
+    "mrna":        "mRNA Expression",
+    "protein":     "Protein expression (RPPA)",
+    "methylation": "DNA Methylation",
+    "treatment":   "Treatment",
+    "segment":     "Copy Number Segments",
+}
+
+_DATA_TYPE_TABLE = {
+    "mutation": "mutations",
+    "cna":      "cna",
+    "sv":       "sv",
+}
+
+
+def get_data_types_chart(conn, study_id: str, filter_json: str | None) -> list[dict]:
+    """Return list of {data_type, display_name, count, freq} for each data type in the study."""
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+    try:
+        total = conn.execute(
+            f'SELECT COUNT(*) FROM ({filter_sql})', params
+        ).fetchone()[0]
+    except Exception:
+        total = 0
+
+    try:
+        data_types = [r[0] for r in conn.execute(
+            "SELECT data_type FROM study_data_types WHERE study_id = ? ORDER BY data_type",
+            (study_id,),
+        ).fetchall()]
+    except Exception:
+        data_types = []
+
+    result = []
+    for dt in data_types:
+        display_name = _DATA_TYPE_DISPLAY.get(dt, dt)
+        table_suffix = _DATA_TYPE_TABLE.get(dt)
+        if table_suffix:
+            try:
+                count = conn.execute(
+                    f'SELECT COUNT(DISTINCT sample_id) FROM "{study_id}_{table_suffix}" '
+                    f'WHERE sample_id IN ({filter_sql})',
+                    params,
+                ).fetchone()[0]
+            except Exception:
+                count = total
+        else:
+            count = total
+        freq = (count / total * 100) if total > 0 else 0.0
+        result.append({
+            "data_type":    dt,
+            "display_name": display_name,
+            "count":        count,
+            "freq":         round(freq, 1),
+        })
+    return result
+
+
 def build_filtered_sample_ids(conn, study_id: str, filter_json: str | None) -> list[str] | None:
     """Legacy helper for non-refactored routes."""
     sql, params = _build_filter_subquery(conn, study_id, filter_json)

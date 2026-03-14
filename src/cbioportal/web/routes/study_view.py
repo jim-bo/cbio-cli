@@ -15,6 +15,8 @@ from cbioportal.core.study_view_repository import (
     get_km_data,
     get_tmb_fga_scatter,
     get_clinical_attributes,
+    get_charts_meta,
+    get_data_types_chart,
 )
 
 router = APIRouter()
@@ -57,6 +59,12 @@ def _infer_chart_type(attr_id: str, data: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@router.get("/study/summary/charts-meta")
+async def charts_meta_endpoint(request: Request, id: str):
+    conn = request.app.state.db_conn
+    return get_charts_meta(conn, id)
+
 
 @router.get("/study/summary", response_class=HTMLResponse)
 async def study_summary(request: Request, id: str):
@@ -153,3 +161,14 @@ async def chart_km(
 ):
     conn = request.app.state.db_conn
     return get_km_data(conn, study_id, filter_json)
+
+
+@router.post("/study/summary/chart/data-types")
+async def chart_data_types(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
+):
+    conn = request.app.state.db_conn
+    return get_data_types_chart(conn, study_id, filter_json)

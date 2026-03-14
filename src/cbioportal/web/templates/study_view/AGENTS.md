@@ -43,6 +43,80 @@ const Charts = { Pies: {}, AgeHistogram: null, MutatedGenes: null, /* one entry 
 
 ---
 
+## Dynamic chart layout
+
+Dashboard widgets are no longer hardcoded in `page.html`. On load, JS fetches
+`GET /study/summary/charts-meta?id=<study_id>` which returns an ordered list of
+chart descriptors. `buildDashboard(chartsMeta, grid)` then creates each widget via
+`grid.addWidget({ content: buildWidgetHTML(chart) })` using a simple 12-column
+left-to-right bin-packer.
+
+### `clinical_attribute_meta` table
+
+Populated by `loader.py` at study load time by parsing the 4 metadata header rows
+from `data_clinical_patient.txt` and `data_clinical_sample.txt`.
+
+```sql
+clinical_attribute_meta (
+    study_id, attr_id, display_name, description,
+    datatype VARCHAR,        -- 'STRING' | 'NUMBER' | 'BOOLEAN'
+    patient_attribute BOOLEAN,
+    priority INTEGER,
+    PRIMARY KEY (study_id, attr_id)
+)
+```
+
+### `GET /study/summary/charts-meta` response
+
+Returns a JSON array sorted by `priority DESC`. Each item:
+
+```json
+{
+  "attr_id": "CANCER_TYPE",
+  "display_name": "Cancer Type",
+  "chart_type": "table",
+  "patient_attribute": false,
+  "priority": 3000,
+  "w": 4,
+  "h": 10
+}
+```
+
+Special genomic charts use `_`-prefixed `attr_id` values:
+`_mutated_genes`, `_cna_genes`, `_sv_genes`, `_scatter`, `_km`.
+
+### Chart-type assignment rules
+
+| Condition | chart_type |
+|---|---|
+| `attr_id` is `CANCER_TYPE` or `CANCER_TYPE_DETAILED` | `table` |
+| `DATATYPE = STRING` or `BOOLEAN` | `pie` |
+| `DATATYPE = NUMBER` | `bar` |
+| `mutation` in `study_data_types` | `_mutated_genes` |
+| `cna` in `study_data_types` | `_cna_genes` |
+| `sv` in `study_data_types` | `_sv_genes` |
+| both `mutation` + `cna` | `_scatter` |
+| `OS_MONTHS` + `OS_STATUS` columns present | `_km` |
+
+Grid dimensions: `pie` → w=2,h=5 | `bar` → w=4,h=5 | `table`/genomic → w=4,h=10.
+
+### JS pattern
+
+- `buildWidgetHTML(chart)` → generates inner HTML string for each `chart_type`.
+- `routeUpdateWidget(chart)` → dispatches to the appropriate `update*Widget()` call.
+- `updateAll()` → iterates `DashboardState.chartsMeta` calling `routeUpdateWidget`.
+- `updateBarWidget(attrId)` → handles any `bar` chart; AGE-like attrs use `/age`
+  endpoint for 5-year binning, others use `/clinical`.
+- `Charts.Bars = {}` registry alongside `Charts.Pies` for resize handling.
+
+### Backward-compat fallback
+
+If `clinical_attribute_meta` doesn't exist or has no rows for the study,
+`get_charts_meta()` falls back to `get_clinical_attributes()` + DuckDB column
+type introspection (`DESCRIBE`), with canonical priority overrides for known attrs.
+
+---
+
 ## Backend endpoint conventions
 
 Chart routes live in `src/cbioportal/web/routes/study_view.py`.

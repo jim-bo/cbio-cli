@@ -43,6 +43,47 @@ def db():
 
 
 @pytest.fixture
+def db_with_clinical_meta():
+    """In-memory DuckDB with clinical_attribute_meta and study_data_types populated."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(f'CREATE TABLE "{STUDY}_sample" (SAMPLE_ID VARCHAR, PATIENT_ID VARCHAR, CANCER_TYPE VARCHAR, SAMPLE_ATTR VARCHAR)')
+    conn.execute(f'CREATE TABLE "{STUDY}_patient" (PATIENT_ID VARCHAR, GENDER VARCHAR, AGE DOUBLE, OS_MONTHS DOUBLE, OS_STATUS VARCHAR)')
+    conn.execute("CREATE TABLE studies (study_id VARCHAR, name VARCHAR)")
+    conn.execute("INSERT INTO studies VALUES (?, ?)", (STUDY, "Test Study"))
+    conn.execute("""
+        CREATE TABLE study_data_types (
+            study_id VARCHAR NOT NULL,
+            data_type VARCHAR NOT NULL,
+            PRIMARY KEY (study_id, data_type)
+        )
+    """)
+    conn.execute("INSERT INTO study_data_types VALUES (?, ?)", (STUDY, "mutation"))
+    conn.execute("""
+        CREATE TABLE clinical_attribute_meta (
+            study_id          VARCHAR NOT NULL,
+            attr_id           VARCHAR NOT NULL,
+            display_name      VARCHAR,
+            description       VARCHAR,
+            datatype          VARCHAR,
+            patient_attribute BOOLEAN,
+            priority          INTEGER,
+            PRIMARY KEY (study_id, attr_id)
+        )
+    """)
+    conn.executemany("INSERT INTO clinical_attribute_meta VALUES (?, ?, ?, ?, ?, ?, ?)", [
+        (STUDY, "CANCER_TYPE",  "Cancer Type",  "Type of cancer",     "STRING", False, 3000),
+        (STUDY, "SAMPLE_ATTR",  "Sample Attr",  "A sample attribute", "STRING", False, 5),
+        (STUDY, "GENDER",       "Sex",          "Patient gender",     "STRING", True,  9),
+        (STUDY, "AGE",          "Age",          "Age at diagnosis",   "NUMBER", True,  9),
+        (STUDY, "OS_MONTHS",    "OS Months",    "Survival months",    "NUMBER", True,  1),
+        (STUDY, "OS_STATUS",    "OS Status",    "Survival status",    "STRING", True,  1),
+        (STUDY, "HIDDEN_ATTR",  "Hidden",       "Priority 0 attr",    "STRING", False, 0),
+    ])
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
 def db_with_gene_ref():
     conn = duckdb.connect(":memory:")
     conn.execute(f'CREATE TABLE "{STUDY}_sample" (SAMPLE_ID VARCHAR, PATIENT_ID VARCHAR)')

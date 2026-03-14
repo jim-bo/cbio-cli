@@ -16,7 +16,7 @@
     .grid-stack-item-content { overflow: visible !important; }
     .cbio-widget { height: 100%; width: 100%; }
     .echarts-container { width: 100%; height: 100%; }
-    
+
     .loading-overlay {
         position: absolute;
         inset: 0;
@@ -29,200 +29,62 @@
         color: #999;
     }
     .font-bold { font-weight: bold; }
+
+    /* Info popover */
+    #cbio-info-popover {
+        display: none;
+        position: fixed;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        padding: 8px 10px;
+        font-size: 11px;
+        max-width: 260px;
+        z-index: 2000;
+        line-height: 1.5;
+    }
+    #cbio-info-popover .pop-header { margin-bottom: 6px; }
+    #cbio-info-popover .pop-title { font-weight: bold; color: #333; }
+    #cbio-info-popover .pop-id { color: #888; font-size: 11px; margin-left: 4px; }
+    #cbio-info-popover .pop-desc { color: #555; white-space: pre-line; }
+
+    /* Hamburger dropdown menu */
+    #cbio-widget-menu {
+        display: none;
+        position: fixed;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        z-index: 2000;
+        min-width: 160px;
+        font-size: 12px;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    .cbio-menu-item {
+        padding: 6px 14px;
+        cursor: pointer;
+        white-space: nowrap;
+        color: #333;
+    }
+    .cbio-menu-item:hover { background-color: #f0f0f0; }
+    .cbio-menu-divider { height: 1px; background: #eee; margin: 2px 0; }
+    .cbio-menu-section { padding: 4px 14px 2px; color: #999; font-size: 10px; text-transform: uppercase; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="dashboard-container">
-    <div class="grid-stack">
-        <!-- ROW 1 AREA -->
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="0">
-            <div class="grid-stack-item-content">
-                {% with attr_id="CANCER_TYPE", title="Cancer Type" %}
-                    {% include "study_view/partials/charts/vanilla_table.html" %}
-                {% endwith %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="4" gs-y="0">
-            <div class="grid-stack-item-content">
-                {% with attr_id="CLINICAL_GROUP", title="Clinical Group" %}
-                    {% include "study_view/partials/charts/vanilla_table.html" %}
-                {% endwith %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="8" gs-y="0">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-CLINICAL_SUMMARY">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Clinical Summary</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-CLINICAL_SUMMARY" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="10" gs-y="0">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-DIAGNOSIS_DESCRIPTION">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Diagnosis Description</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-DIAGNOSIS_DESCRIPTION" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ROW 2 AREA -->
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="10">
-            <div class="grid-stack-item-content">
-                {% with attr_id="ICD_O_HISTOLOGY_DESCRIPTION", title="ICD-O Histology Description" %}
-                    {% include "study_view/partials/charts/vanilla_table.html" %}
-                {% endwith %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="4" gs-y="10">
-            <div class="grid-stack-item-content">
-                {% with attr_id="PATHOLOGICAL_GROUP", title="Pathological Group" %}
-                    {% include "study_view/partials/charts/vanilla_table.html" %}
-                {% endwith %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="8" gs-y="5">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-OS_STATUS">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Overall Survival Status</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-OS_STATUS" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="10" gs-y="5">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-SAMPLE_TYPE">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Sample Type</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-SAMPLE_TYPE" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ROW 3 AREA -->
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="0" gs-y="20">
-            <div class="grid-stack-item-content">
-                {% include "study_view/partials/charts/vanilla_genomic_table.html" %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="4" gs-y="20">
-            <div class="grid-stack-item-content">
-                {% include "study_view/partials/charts/vanilla_cna_table.html" %}
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="4" gs-h="10" gs-x="8" gs-y="20">
-            <div class="grid-stack-item-content">
-                {% include "study_view/partials/charts/vanilla_sv_table.html" %}
-            </div>
-        </div>
-
-        <!-- ROW 4 AREA -->
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="0" gs-y="30">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-RACE">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Race</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-RACE" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="2" gs-y="30">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-GENDER">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Sex</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-GENDER" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="4" gs-y="30">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-ETHNICITY">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Ethnicity</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-ETHNICITY" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="2" gs-h="5" gs-x="6" gs-y="30">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-MSI_TYPE">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">MSI Type</div>
-                        <div class="cbio-widget-controls">
-                            <button class="cbio-widget-btn"><i class="fa fa-info-circle"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                            <button class="cbio-widget-btn"><i class="fa fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content"><div id="chart-MSI_TYPE" class="echarts-container"></div></div>
-                </div>
-            </div>
-        </div>
-        <div class="grid-stack-item" gs-w="4" gs-h="5" gs-x="8" gs-y="30">
-            <div class="grid-stack-item-content">
-                <div class="cbio-widget" id="widget-age-histogram">
-                    <div class="cbio-widget-header">
-                        <div class="cbio-widget-title">Current Age</div>
-                        <div class="cbio-widget-controls" style="display:flex;align-items:center;gap:4px;">
-                            <span id="age-na-count" style="font-size:10px;color:#999;display:none;"></span>
-                            <button class="cbio-widget-btn"><i class="fa fa-times"></i></button>
-                        </div>
-                    </div>
-                    <div class="cbio-widget-content">
-                        <div id="chart-age-histogram" class="echarts-container"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    <div class="grid-stack" id="dashboard-grid"></div>
 </div>
+
+<!-- Singleton overlay elements -->
+<div id="cbio-info-popover">
+    <div class="pop-header"><span class="pop-title"></span><span class="pop-id"></span></div>
+    <div class="pop-desc"></div>
+</div>
+<div id="cbio-widget-menu"></div>
 
 <!-- Dependencies -->
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
@@ -233,18 +95,23 @@
         studyId: "{{ meta.study_id }}",
         nPatients: {{ meta.n_patients }},
         nSamples: {{ meta.n_samples }},
-        filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] } }
+        filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] } },
+        chartsMeta: [],
     };
 
-    const Charts = { Pies: {}, AgeHistogram: null };
+    const Charts = { Pies: {}, Bars: {}, Scatter: null, KM: null };
+    const widgetData = {}; // last-fetched data per attrId for CSV download
+
+    // Age-like column names that should use the dedicated /age (binned histogram) endpoint
+    const AGE_COLS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
 
     function broadcastUpdate() { window.dispatchEvent(new CustomEvent('cbio-filter-changed')); }
 
     function getFiltersForWidget(excludeAttrId) {
         let f = JSON.parse(JSON.stringify(DashboardState.filters));
-        if (excludeAttrId === 'mutated-genes') f.mutationFilter.genes = [];
-        else if (excludeAttrId === 'sv-genes') f.svFilter.genes = [];
-        else if (excludeAttrId === 'cna-genes') {} // TBD
+        if (excludeAttrId === '_mutated_genes') f.mutationFilter.genes = [];
+        else if (excludeAttrId === '_sv_genes') f.svFilter.genes = [];
+        else if (excludeAttrId === '_cna_genes') {} // TBD
         else f.clinicalDataFilters = f.clinicalDataFilters.filter(x => x.attributeId !== excludeAttrId);
         return f;
     }
@@ -264,10 +131,10 @@
             const response = await fetch('/study/summary/chart/clinical?format=json', { method: 'POST', body: formData });
             const json = await response.json();
             const data = json.data || [];
+            widgetData[attrId] = data;
             const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
             const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
 
-            // Update Select All Button logic
             if (selectAllBtn) {
                 const allSelected = data.length > 0 && data.every(item => selectedValues.includes(item.value));
                 selectAllBtn.innerText = allSelected ? 'Deselect all' : 'Select all';
@@ -308,7 +175,7 @@
     async function updatePieWidget(attrId) {
         const chartDom = document.getElementById(`chart-${attrId}`);
         if (!chartDom) return;
-        if (!Charts.Pies[attrId]) Charts.Pies[attrId] = echarts.init(chartDom);
+        if (!Charts.Pies[attrId]) Charts.Pies[attrId] = echarts.init(chartDom, null, { renderer: 'svg' });
         const chart = Charts.Pies[attrId];
         try {
             const formData = new FormData();
@@ -318,6 +185,7 @@
             const response = await fetch('/study/summary/chart/clinical?format=json', { method: 'POST', body: formData });
             const json = await response.json();
             const data = json.data || [];
+            widgetData[attrId] = data;
             const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
             const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
             chart.setOption({
@@ -335,16 +203,56 @@
         } catch (err) {}
     }
 
+    async function updateBarWidget(attrId) {
+        const chartDom = document.getElementById(`chart-${attrId}`);
+        if (!chartDom) return;
+        if (!Charts.Bars[attrId]) Charts.Bars[attrId] = echarts.init(chartDom, null, { renderer: 'svg' });
+        const chart = Charts.Bars[attrId];
+        const naEl = document.getElementById(`na-count-${attrId}`);
+        try {
+            const formData = new FormData();
+            formData.append('study_id', DashboardState.studyId);
+            formData.append('filter_json', JSON.stringify(DashboardState.filters));
+            let bins, naCount = 0;
+            if (AGE_COLS.has(attrId)) {
+                // Use dedicated age endpoint for proper 5-year bucketing
+                const response = await fetch('/study/summary/chart/age?format=json', { method: 'POST', body: formData });
+                const json = await response.json();
+                bins = json.data || [];
+                naCount = json.na_count || 0;
+            } else {
+                // Use clinical endpoint for generic numeric attrs
+                formData.append('attribute_id', attrId);
+                const response = await fetch('/study/summary/chart/clinical?format=json', { method: 'POST', body: formData });
+                const json = await response.json();
+                bins = (json.data || []).map(d => ({ x: d.value, y: d.count }));
+            }
+            widgetData[attrId] = bins;
+            if (naEl) {
+                naEl.textContent = naCount > 0 ? `NA: ${naCount}` : '';
+                naEl.style.display = naCount > 0 ? 'inline' : 'none';
+            }
+            chart.setOption({
+                tooltip: { trigger: 'axis', formatter: (params) => `${params[0].name}: ${params[0].value.toLocaleString()}` },
+                xAxis: { type: 'category', data: bins.map(d => d.x), axisLabel: { rotate: -45, fontSize: 9 } },
+                yAxis: { type: 'value', axisLabel: { fontSize: 9, formatter: (v) => v >= 1000 ? `${v/1000}k` : v } },
+                series: [{ type: 'bar', data: bins.map(d => d.y), itemStyle: { color: '#2986E2' }, barMaxWidth: 20 }],
+                grid: { left: 45, right: 10, top: 10, bottom: 55 }
+            });
+        } catch (e) {}
+    }
+
     async function updateGenomicTableWidget() {
-        const widget = document.getElementById(`widget-mutated-genes`);
-        const tbody = document.getElementById(`table-body-mutated-genes`);
-        const titleEl = document.getElementById(`title-mutated-genes`);
+        const widget = document.getElementById(`widget-_mutated_genes`);
+        const tbody = document.getElementById(`table-body-_mutated_genes`);
+        const titleEl = document.getElementById(`title-_mutated_genes`);
         if (!tbody) return;
         try {
-            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('mutated-genes')));
+            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_mutated_genes')));
             const response = await fetch('/study/summary/chart/mutated-genes?format=json', { method: 'POST', body: formData });
             const data = await response.json() || [];
-            titleEl.innerText = `Mutated Genes (${DashboardState.nSamples} profiled samples)`;
+            widgetData['_mutated_genes'] = data;
+            if (titleEl) titleEl.innerText = `Mutated Genes (${DashboardState.nSamples} profiled samples)`;
             const selectedGenes = DashboardState.filters.mutationFilter.genes;
             tbody.innerHTML = '';
             data.forEach(item => {
@@ -358,15 +266,16 @@
     }
 
     async function updateCNATableWidget() {
-        const widget = document.getElementById(`widget-cna-genes`);
-        const tbody = document.getElementById(`table-body-cna-genes`);
-        const titleEl = document.getElementById(`title-cna-genes`);
+        const widget = document.getElementById(`widget-_cna_genes`);
+        const tbody = document.getElementById(`table-body-_cna_genes`);
+        const titleEl = document.getElementById(`title-_cna_genes`);
         if (!tbody) return;
         try {
-            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('cna-genes')));
+            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_cna_genes')));
             const response = await fetch('/study/summary/chart/cna-genes?format=json', { method: 'POST', body: formData });
             const data = await response.json() || [];
-            titleEl.innerText = `CNA Genes (${DashboardState.nSamples} profiled samples)`;
+            widgetData['_cna_genes'] = data;
+            if (titleEl) titleEl.innerText = `CNA Genes (${DashboardState.nSamples} profiled samples)`;
             tbody.innerHTML = '';
             data.forEach(item => {
                 const tr = document.createElement('tr');
@@ -377,15 +286,16 @@
     }
 
     async function updateSVTableWidget() {
-        const widget = document.getElementById(`widget-sv-genes`);
-        const tbody = document.getElementById(`table-body-sv-genes`);
-        const titleEl = document.getElementById(`title-sv-genes`);
+        const widget = document.getElementById(`widget-_sv_genes`);
+        const tbody = document.getElementById(`table-body-_sv_genes`);
+        const titleEl = document.getElementById(`title-_sv_genes`);
         if (!tbody) return;
         try {
-            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('sv-genes')));
+            const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_sv_genes')));
             const response = await fetch('/study/summary/chart/sv-genes?format=json', { method: 'POST', body: formData });
             const data = await response.json() || [];
-            titleEl.innerText = `Structural Variant Genes (${DashboardState.nSamples} profiled samples)`;
+            widgetData['_sv_genes'] = data;
+            if (titleEl) titleEl.innerText = `Structural Variant Genes (${DashboardState.nSamples} profiled samples)`;
             const selectedGenes = DashboardState.filters.svFilter.genes;
             tbody.innerHTML = '';
             data.forEach(item => {
@@ -398,12 +308,73 @@
         } catch (e) {}
     }
 
+    async function updateScatterWidget() {
+        const chartDom = document.getElementById('chart-_scatter');
+        if (!chartDom) return;
+        if (!Charts.Scatter) Charts.Scatter = echarts.init(chartDom, null, { renderer: 'svg' });
+        try {
+            const formData = new FormData();
+            formData.append('study_id', DashboardState.studyId);
+            formData.append('filter_json', JSON.stringify(DashboardState.filters));
+            const response = await fetch('/study/summary/chart/scatter?format=json', { method: 'POST', body: formData });
+            const data = await response.json();
+            Charts.Scatter.setOption({
+                tooltip: { trigger: 'item', formatter: p => `${p.data[2]}<br/>FGA: ${p.data[0]}<br/>Mutations: ${p.data[1]}` },
+                xAxis: { type: 'value', name: 'FGA', nameLocation: 'end', axisLabel: { fontSize: 9 } },
+                yAxis: { type: 'value', name: 'Mut Count', nameLocation: 'end', axisLabel: { fontSize: 9 } },
+                series: [{ type: 'scatter', data: data.map(d => [d.fga, d.mutation_count, d.sample_id]), itemStyle: { color: '#2986E2', opacity: 0.6 }, symbolSize: 5 }],
+                grid: { left: 50, right: 10, top: 20, bottom: 30 }
+            });
+        } catch (e) {}
+    }
+
+    async function updateDataTypesWidget() {
+        const tbody = document.getElementById('table-body-_data_types');
+        if (!tbody) return;
+        try {
+            const formData = new FormData();
+            formData.append('study_id', DashboardState.studyId);
+            formData.append('filter_json', JSON.stringify(DashboardState.filters));
+            const response = await fetch('/study/summary/chart/data-types?format=json', { method: 'POST', body: formData });
+            const data = await response.json() || [];
+            tbody.innerHTML = '';
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="padding-left:10px;">${item.display_name}</td>
+                    <td style="text-align:right;">${item.count.toLocaleString()}</td>
+                    <td style="text-align:right;">${item.freq.toFixed(1)}%</td>`;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {}
+    }
+
+    async function updateKMWidget() {
+        const chartDom = document.getElementById('chart-_km');
+        if (!chartDom) return;
+        if (!Charts.KM) Charts.KM = echarts.init(chartDom, null, { renderer: 'svg' });
+        try {
+            const formData = new FormData();
+            formData.append('study_id', DashboardState.studyId);
+            formData.append('filter_json', JSON.stringify(DashboardState.filters));
+            const response = await fetch('/study/summary/chart/km?format=json', { method: 'POST', body: formData });
+            const data = await response.json();
+            Charts.KM.setOption({
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'value', name: 'Months', axisLabel: { fontSize: 9 } },
+                yAxis: { type: 'value', min: 0, max: 1, name: 'Survival', axisLabel: { fontSize: 9 } },
+                series: [{ type: 'line', data: data.map(d => [d.time, d.survival]), step: 'end', itemStyle: { color: '#2986E2' }, symbol: 'none' }],
+                grid: { left: 50, right: 10, top: 20, bottom: 30 }
+            });
+        } catch (e) {}
+    }
+
     function toggleFilter(attrId, value) {
         let cf = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
-        if (!cf) { DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: [{ value }] }); } 
+        if (!cf) { DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: [{ value }] }); }
         else {
             const idx = cf.values.findIndex(v => v.value === value);
-            if (idx > -1) { cf.values.splice(idx, 1); if (cf.values.length === 0) DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId); } 
+            if (idx > -1) { cf.values.splice(idx, 1); if (cf.values.length === 0) DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId); }
             else { cf.values.push({ value }); }
         }
         broadcastUpdate();
@@ -423,47 +394,545 @@
         broadcastUpdate();
     }
 
-    async function updateAgeWidget() {
-        const chartDom = document.getElementById('chart-age-histogram');
-        const naEl = document.getElementById('age-na-count');
-        if (!chartDom) return;
-        if (!Charts.AgeHistogram) Charts.AgeHistogram = echarts.init(chartDom);
-        const chart = Charts.AgeHistogram;
-        try {
-            const formData = new FormData();
-            formData.append('study_id', DashboardState.studyId);
-            formData.append('filter_json', JSON.stringify(DashboardState.filters));
-            const response = await fetch('/study/summary/chart/age?format=json', { method: 'POST', body: formData });
-            const json = await response.json();
-            const bins = json.data || json;
-            const naCount = json.na_count || 0;
-            if (naEl) {
-                naEl.textContent = naCount > 0 ? `NA: ${naCount}` : '';
-                naEl.style.display = naCount > 0 ? 'inline' : 'none';
-            }
-            chart.setOption({
-                tooltip: { trigger: 'axis', formatter: (params) => `${params[0].name}: ${params[0].value.toLocaleString()}` },
-                xAxis: { type: 'category', data: bins.map(d => d.x), axisLabel: { rotate: -45, fontSize: 9 } },
-                yAxis: { type: 'value', axisLabel: { fontSize: 9, formatter: (v) => v >= 1000 ? `${v/1000}k` : v } },
-                series: [{ type: 'bar', data: bins.map(d => d.y), itemStyle: { color: '#2986E2' }, barMaxWidth: 20 }],
-                grid: { left: 45, right: 10, top: 10, bottom: 55 }
-            });
-        } catch (e) {}
+    function routeUpdateWidget(chart) {
+        const widgetEl = document.getElementById(`widget-${chart.attr_id}`);
+        const viewMode = widgetEl ? widgetEl.dataset.viewMode : chart.chart_type;
+        // Respect toggled view mode for table and bar widgets
+        if (viewMode === 'pie' && (chart.chart_type === 'table' || chart.chart_type === 'bar')) {
+            return updatePieWidget(chart.attr_id);
+        }
+        switch (chart.chart_type) {
+            case 'pie':             return updatePieWidget(chart.attr_id);
+            case 'bar':             return updateBarWidget(chart.attr_id);
+            case 'table':           return updateTableWidget(chart.attr_id);
+            case '_mutated_genes':  return updateGenomicTableWidget();
+            case '_cna_genes':      return updateCNATableWidget();
+            case '_sv_genes':       return updateSVTableWidget();
+            case '_scatter':        return updateScatterWidget();
+            case '_km':             return updateKMWidget();
+            case '_data_types':     return updateDataTypesWidget();
+        }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        const grid = GridStack.init({ cellHeight: 30, margin: 5, draggable: { handle: '.cbio-widget-header' } });
-        const pies = ['CLINICAL_SUMMARY', 'DIAGNOSIS_DESCRIPTION', 'OS_STATUS', 'SAMPLE_TYPE', 'RACE', 'GENDER', 'MSI_TYPE', 'ETHNICITY', 'STAGE_HIGHEST_RECORDED'];
-        const tables = ['CANCER_TYPE', 'CLINICAL_GROUP', 'ICD_O_HISTOLOGY_DESCRIPTION', 'PATHOLOGICAL_GROUP'];
-        function updateAll() {
-            tables.forEach(updateTableWidget); pies.forEach(updatePieWidget);
-            updateGenomicTableWidget(); updateCNATableWidget(); updateSVTableWidget();
-            updateAgeWidget();
+    function updateAll() {
+        for (const chart of DashboardState.chartsMeta) {
+            routeUpdateWidget(chart);
         }
+    }
+
+    function buildWidgetHTML(chart) {
+        const { attr_id, display_name, chart_type } = chart;
+        const desc = (chart.description || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const dn = (display_name || attr_id).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        function controls() {
+            return `<div class="cbio-widget-controls">
+                <button class="cbio-widget-btn" data-action="info-widget" title="Info"><i class="fa fa-info-circle"></i></button>
+                <button class="cbio-widget-btn" data-action="close-widget" title="Close"><i class="fa fa-times"></i></button>
+                <button class="cbio-widget-btn" data-action="menu-widget" title="Options"><i class="fa fa-bars"></i></button>
+            </div>`;
+        }
+
+        const dataAttrs = `data-attr-id="${attr_id}" data-description="${desc}" data-chart-type="${chart_type}"`;
+
+        if (chart_type === 'pie') {
+            return `
+                <div class="cbio-widget" id="widget-${attr_id}" ${dataAttrs} data-view-mode="pie">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">${dn}</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-${attr_id}" class="echarts-container"></div></div>
+                </div>`;
+        }
+
+        if (chart_type === 'bar') {
+            return `
+                <div class="cbio-widget" id="widget-${attr_id}" ${dataAttrs} data-view-mode="bar">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">${dn}</div>
+                        <div class="cbio-widget-controls" style="display:flex;align-items:center;gap:4px;">
+                            <span id="na-count-${attr_id}" style="font-size:10px;color:#999;display:none;"></span>
+                            <button class="cbio-widget-btn" data-action="info-widget" title="Info"><i class="fa fa-info-circle"></i></button>
+                            <button class="cbio-widget-btn" data-action="close-widget" title="Close"><i class="fa fa-times"></i></button>
+                            <button class="cbio-widget-btn" data-action="menu-widget" title="Options"><i class="fa fa-bars"></i></button>
+                        </div>
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-${attr_id}" class="echarts-container"></div></div>
+                </div>`;
+        }
+
+        if (chart_type === 'table') {
+            return `
+                <div class="cbio-widget" id="widget-${attr_id}" ${dataAttrs} data-view-mode="table">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title" id="title-${attr_id}">${dn}</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content">
+                        <div id="chart-${attr_id}" class="echarts-container" style="display:none;height:100%;width:100%;"></div>
+                        <table class="cbio-table">
+                            <thead><tr>
+                                <th></th>
+                                <th class="cbio-table-count">#</th>
+                                <th class="cbio-table-freq">Freq <i class="fa fa-caret-down"></i></th>
+                            </tr></thead>
+                            <tbody id="table-body-${attr_id}"></tbody>
+                        </table>
+                    </div>
+                    <div class="cbio-widget-footer">
+                        <input type="text" class="cbio-search-input" placeholder="Search...">
+                        <button class="cbio-footer-btn" id="btn-select-all-${attr_id}">Select all</button>
+                    </div>
+                    <div class="cbio-resize-handle"></div>
+                </div>`;
+        }
+
+        if (chart_type === '_mutated_genes') {
+            return `
+                <div class="cbio-widget" id="widget-_mutated_genes" ${dataAttrs} data-view-mode="_mutated_genes">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title" id="title-_mutated_genes">Mutated Genes</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content">
+                        <table class="cbio-table">
+                            <thead><tr>
+                                <th style="text-align: left; padding-left: 10px;"><i class="fa fa-filter" style="color: #ccc; margin-right: 4px;"></i>Gene</th>
+                                <th style="text-align: right;"># Mut</th>
+                                <th style="text-align: right;">#</th>
+                                <th style="text-align: right;">Freq <i class="fa fa-caret-down"></i></th>
+                            </tr></thead>
+                            <tbody id="table-body-_mutated_genes"></tbody>
+                        </table>
+                    </div>
+                    <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                    <div class="cbio-resize-handle"></div>
+                </div>`;
+        }
+
+        if (chart_type === '_cna_genes') {
+            return `
+                <div class="cbio-widget" id="widget-_cna_genes" ${dataAttrs} data-view-mode="_cna_genes">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title" id="title-_cna_genes">CNA Genes</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content">
+                        <table class="cbio-table">
+                            <thead><tr>
+                                <th style="text-align: left; padding-left: 10px;"><i class="fa fa-filter" style="color: #ccc; margin-right: 4px;"></i>Gene</th>
+                                <th style="text-align: center;">CNA</th>
+                                <th style="text-align: right;">#</th>
+                                <th style="text-align: right;">Freq <i class="fa fa-caret-down"></i></th>
+                            </tr></thead>
+                            <tbody id="table-body-_cna_genes"></tbody>
+                        </table>
+                    </div>
+                    <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                    <div class="cbio-resize-handle"></div>
+                </div>`;
+        }
+
+        if (chart_type === '_sv_genes') {
+            return `
+                <div class="cbio-widget" id="widget-_sv_genes" ${dataAttrs} data-view-mode="_sv_genes">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title" id="title-_sv_genes">Structural Variant Genes</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content">
+                        <table class="cbio-table">
+                            <thead><tr>
+                                <th style="text-align: left; padding-left: 10px;"><i class="fa fa-filter" style="color: #ccc; margin-right: 4px;"></i>Gene</th>
+                                <th style="text-align: right;"># SV</th>
+                                <th style="text-align: right;">#</th>
+                                <th style="text-align: right;">Freq <i class="fa fa-caret-down"></i></th>
+                            </tr></thead>
+                            <tbody id="table-body-_sv_genes"></tbody>
+                        </table>
+                    </div>
+                    <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                    <div class="cbio-resize-handle"></div>
+                </div>`;
+        }
+
+        if (chart_type === '_scatter') {
+            return `
+                <div class="cbio-widget" id="widget-_scatter" ${dataAttrs} data-view-mode="_scatter">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">TMB vs FGA</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-_scatter" class="echarts-container"></div></div>
+                </div>`;
+        }
+
+        if (chart_type === '_km') {
+            return `
+                <div class="cbio-widget" id="widget-_km" ${dataAttrs} data-view-mode="_km">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Overall Survival</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content"><div id="chart-_km" class="echarts-container"></div></div>
+                </div>`;
+        }
+
+        if (chart_type === '_data_types') {
+            return `
+                <div class="cbio-widget" id="widget-_data_types" ${dataAttrs} data-view-mode="_data_types">
+                    <div class="cbio-widget-header">
+                        <div class="cbio-widget-title">Data Types</div>
+                        ${controls()}
+                    </div>
+                    <div class="cbio-widget-content">
+                        <table class="cbio-table">
+                            <thead><tr>
+                                <th style="text-align:left;padding-left:10px;"></th>
+                                <th style="text-align:right;">#</th>
+                                <th style="text-align:right;">Freq <i class="fa fa-caret-down"></i></th>
+                            </tr></thead>
+                            <tbody id="table-body-_data_types"></tbody>
+                        </table>
+                    </div>
+                    <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                    <div class="cbio-resize-handle"></div>
+                </div>`;
+        }
+
+        return '';
+    }
+
+    // --- Info popover ---
+    function showInfoPopover(btn) {
+        const widget = btn.closest('.cbio-widget');
+        if (!widget) return;
+        const pop = document.getElementById('cbio-info-popover');
+        const attrId = widget.dataset.attrId || '';
+        const desc = widget.dataset.description || '';
+        const titleText = widget.querySelector('.cbio-widget-title')?.textContent?.trim() || attrId;
+
+        pop.querySelector('.pop-title').textContent = titleText;
+        pop.querySelector('.pop-id').textContent = attrId ? `ID: ${attrId}` : '';
+        pop.querySelector('.pop-desc').textContent = (desc || '').replace(/ Source:/g, '\nSource:');
+        pop.dataset.forWidget = widget.id;
+        pop.style.display = 'block';
+
+        const rect = btn.getBoundingClientRect();
+        const popW = 260;
+        let left = rect.left;
+        if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+        pop.style.left = left + 'px';
+        pop.style.top = (rect.bottom + 4) + 'px';
+    }
+
+    function hideInfoPopover() {
+        document.getElementById('cbio-info-popover').style.display = 'none';
+    }
+
+    // --- Toggle view mode (pie <-> table/bar) ---
+    async function toggleViewMode(attrId) {
+        const widget = document.getElementById(`widget-${attrId}`);
+        if (!widget) return;
+        const chartType = widget.dataset.chartType;
+        const viewMode = widget.dataset.viewMode;
+        const chartDiv = document.getElementById(`chart-${attrId}`);
+
+        if (chartType === 'table') {
+            const tableEl = widget.querySelector('.cbio-table');
+            const footerEl = widget.querySelector('.cbio-widget-footer');
+            if (viewMode === 'table') {
+                // → pie
+                if (tableEl) tableEl.style.display = 'none';
+                if (footerEl) footerEl.style.display = 'none';
+                if (chartDiv) chartDiv.style.display = '';
+                widget.dataset.viewMode = 'pie';
+                await updatePieWidget(attrId);
+            } else {
+                // → table
+                if (chartDiv) chartDiv.style.display = 'none';
+                if (tableEl) tableEl.style.display = '';
+                if (footerEl) footerEl.style.display = '';
+                // Dispose pie instance so it re-inits fresh on next toggle
+                if (Charts.Pies[attrId]) { Charts.Pies[attrId].dispose(); delete Charts.Pies[attrId]; }
+                widget.dataset.viewMode = 'table';
+                await updateTableWidget(attrId);
+            }
+        } else if (chartType === 'bar') {
+            if (viewMode === 'bar') {
+                // Dispose bar → pie
+                if (Charts.Bars[attrId]) { Charts.Bars[attrId].dispose(); delete Charts.Bars[attrId]; }
+                widget.dataset.viewMode = 'pie';
+                await updatePieWidget(attrId);
+            } else {
+                // Dispose pie → bar
+                if (Charts.Pies[attrId]) { Charts.Pies[attrId].dispose(); delete Charts.Pies[attrId]; }
+                widget.dataset.viewMode = 'bar';
+                await updateBarWidget(attrId);
+            }
+        }
+    }
+
+    // --- Download helpers ---
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadCSV(attrId) {
+        const data = widgetData[attrId];
+        if (!data || !data.length) return;
+        const firstKey = Object.keys(data[0]);
+        const lines = [firstKey.join(',')];
+        data.forEach(row => {
+            lines.push(firstKey.map(k => {
+                const v = String(row[k] ?? '');
+                return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
+            }).join(','));
+        });
+        downloadBlob(new Blob([lines.join('\n')], { type: 'text/csv' }), `${attrId}.csv`);
+    }
+
+    function downloadSVG(attrId) {
+        let chart = Charts.Pies[attrId] || Charts.Bars[attrId];
+        if (attrId === '_scatter') chart = Charts.Scatter;
+        if (attrId === '_km') chart = Charts.KM;
+        if (!chart) return;
+        const svg = chart.renderToSVGString ? chart.renderToSVGString() : null;
+        if (!svg) { alert('SVG export requires SVG renderer.'); return; }
+        downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${attrId}.svg`);
+    }
+
+    // --- Hamburger menu ---
+    let _menuAttrId = null;
+
+    function showWidgetMenu(btn) {
+        const widget = btn.closest('.cbio-widget');
+        if (!widget) return;
+        const attrId = widget.dataset.attrId;
+        const chartType = widget.dataset.chartType;
+        const viewMode = widget.dataset.viewMode;
+        const menu = document.getElementById('cbio-widget-menu');
+
+        // Toggle off
+        if (menu.style.display === 'block' && _menuAttrId === attrId) {
+            menu.style.display = 'none';
+            _menuAttrId = null;
+            return;
+        }
+        _menuAttrId = attrId;
+
+        const items = [];
+        // View toggle
+        if (chartType === 'table') {
+            const label = viewMode === 'table' ? 'Show as Pie Chart' : 'Show as Table';
+            items.push(`<div class="cbio-menu-item" data-action="toggle-view" data-attr-id="${attrId}">${label}</div>`);
+            items.push('<div class="cbio-menu-divider"></div>');
+        } else if (chartType === 'bar') {
+            const label = viewMode === 'bar' ? 'Show as Pie Chart' : 'Show as Bar Chart';
+            items.push(`<div class="cbio-menu-item" data-action="toggle-view" data-attr-id="${attrId}">${label}</div>`);
+            items.push('<div class="cbio-menu-divider"></div>');
+        }
+        // Downloads
+        items.push('<div class="cbio-menu-section">Download</div>');
+        items.push(`<div class="cbio-menu-item" data-action="download-csv" data-attr-id="${attrId}">Summary Data (CSV)</div>`);
+        const hasSVGChart = ['pie','bar','_scatter','_km'].includes(chartType) ||
+                            (chartType === 'table' && viewMode === 'pie') ||
+                            (chartType === 'bar' && viewMode === 'pie');
+        if (hasSVGChart) {
+            items.push(`<div class="cbio-menu-item" data-action="download-svg" data-attr-id="${attrId}">Image (SVG)</div>`);
+        }
+
+        menu.innerHTML = items.join('');
+        // Position off-screen first to measure, then place
+        menu.style.left = '-9999px';
+        menu.style.top = '-9999px';
+        menu.style.display = 'block';
+
+        const rect = btn.getBoundingClientRect();
+        let left = rect.right - menu.offsetWidth;
+        if (left < 4) left = 4;
+        menu.style.left = left + 'px';
+        menu.style.top = (rect.bottom + 4) + 'px';
+    }
+
+    function hideWidgetMenu() {
+        document.getElementById('cbio-widget-menu').style.display = 'none';
+        _menuAttrId = null;
+    }
+
+    // Pure layout function — returns [{x, y}] for each item, same order as input.
+    // Uses the same bin-packing algorithm (left-to-right rows, gap-filling).
+    function computeLayout(items) {
+        const placed = new Set();
+        const result = items.map(() => ({ x: 0, y: 0 }));
+
+        function place(idx, x, y) { result[idx] = { x, y }; placed.add(idx); }
+
+        let col = 0, rowY = 0, rowMaxH = 0;
+        const rowEntries = [];
+
+        function flushGaps() {
+            if (rowMaxH === 0) return;
+            let gapX = -1, gapW = 0, shortH = 0, cx = 0;
+            for (const { idx } of rowEntries) {
+                const h = items[idx].h;
+                if (h < rowMaxH) { if (gapX === -1) { gapX = cx; shortH = h; } gapW += items[idx].w; }
+                else { gapX = -1; gapW = 0; }
+                cx += items[idx].w;
+            }
+            if (gapX === -1 || gapW === 0) return;
+            const gy = rowY + shortH, availH = rowMaxH - shortH;
+            let gx = gapX;
+            for (let j = 0; j < items.length; j++) {
+                if (placed.has(j)) continue;
+                const c = items[j];
+                if (c.w <= (gapX + gapW - gx) && c.h <= availH) {
+                    place(j, gx, gy); gx += c.w;
+                    if (gx >= gapX + gapW) break;
+                }
+            }
+        }
+
+        for (let i = 0; i < items.length; i++) {
+            if (placed.has(i)) continue;
+            if (col + items[i].w > 12) {
+                flushGaps();
+                col = 0; rowY += rowMaxH; rowMaxH = 0; rowEntries.length = 0;
+            }
+            place(i, col, rowY);
+            rowEntries.push({ idx: i, x: col });
+            col += items[i].w;
+            rowMaxH = Math.max(rowMaxH, items[i].h);
+        }
+        flushGaps();
+        return result;
+    }
+
+    function buildDashboard(chartsMeta, grid) {
+        const items = chartsMeta.map(c => ({ ...c, html: buildWidgetHTML(c) })).filter(c => c.html);
+        const positions = computeLayout(items);
+        items.forEach((c, i) => {
+            grid.addWidget({ w: c.w, h: c.h, x: positions[i].x, y: positions[i].y, content: c.html });
+        });
         updateAll();
+    }
+
+    // Re-pack remaining widgets into order after a close.
+    function relayoutDashboard(removedAttrId, grid) {
+        DashboardState.chartsMeta = DashboardState.chartsMeta.filter(c => c.attr_id !== removedAttrId);
+        const remaining = DashboardState.chartsMeta.filter(c => document.getElementById(`widget-${c.attr_id}`));
+
+        // Sort by current grid position (Y then X) — mirrors legacy calculateLayout() in
+        // StudyViewUtils.tsx:2145 which sorts by chartOrderMap[key].y / .x when a layout exists.
+        // Charts nearest the top fill the vacated space first.
+        remaining.sort((a, b) => {
+            const elA = document.getElementById(`widget-${a.attr_id}`)?.closest('.grid-stack-item');
+            const elB = document.getElementById(`widget-${b.attr_id}`)?.closest('.grid-stack-item');
+            const ay = parseInt(elA?.getAttribute('gs-y') ?? '9999');
+            const ax = parseInt(elA?.getAttribute('gs-x') ?? '9999');
+            const by = parseInt(elB?.getAttribute('gs-y') ?? '9999');
+            const bx = parseInt(elB?.getAttribute('gs-x') ?? '9999');
+            return ay !== by ? ay - by : ax - bx;
+        });
+
+        const positions = computeLayout(remaining);
+        grid.batchUpdate();
+        remaining.forEach((c, i) => {
+            const gsItem = document.getElementById(`widget-${c.attr_id}`)?.closest('.grid-stack-item');
+            if (gsItem) grid.update(gsItem, { x: positions[i].x, y: positions[i].y });
+        });
+        grid.commit();
+        // Keep chartsMeta in the new visual order for subsequent deletions
+        DashboardState.chartsMeta = remaining;
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const grid = GridStack.init({ cellHeight: 30, margin: 5, float: true, draggable: { handle: '.cbio-widget-header' } });
+
+        try {
+            const response = await fetch(`/study/summary/charts-meta?id=${encodeURIComponent(DashboardState.studyId)}`);
+            DashboardState.chartsMeta = await response.json();
+        } catch (e) {
+            DashboardState.chartsMeta = [];
+        }
+
+        buildDashboard(DashboardState.chartsMeta, grid);
+
         window.addEventListener('cbio-filter-changed', updateAll);
-        const resizer = () => { Object.values(Charts.Pies).forEach(c => c.resize()); if (Charts.AgeHistogram) Charts.AgeHistogram.resize(); };
-        grid.on('resizestop', resizer); window.addEventListener('resize', resizer);
+
+        const resizer = () => {
+            Object.values(Charts.Pies).forEach(c => c.resize());
+            Object.values(Charts.Bars).forEach(c => c.resize());
+            if (Charts.Scatter) Charts.Scatter.resize();
+            if (Charts.KM) Charts.KM.resize();
+        };
+        grid.on('resizestop', resizer);
+        window.addEventListener('resize', resizer);
+
+        // Info button: show on hover, hide on mouse leave
+        document.addEventListener('mouseover', e => {
+            if (e.target.closest('[data-action="info-widget"]')) {
+                showInfoPopover(e.target.closest('[data-action="info-widget"]'));
+            }
+        });
+        document.addEventListener('mouseout', e => {
+            const leavingBtn = e.target.closest('[data-action="info-widget"]');
+            const leavingPop = e.target.closest('#cbio-info-popover');
+            if (leavingBtn || leavingPop) {
+                const into = e.relatedTarget;
+                if (!into?.closest('[data-action="info-widget"]') && !into?.closest('#cbio-info-popover')) {
+                    hideInfoPopover();
+                }
+            }
+        });
+
+        // Delegated click handler for widget header buttons and menu items
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('[data-action]');
+            if (btn) {
+                const action = btn.dataset.action;
+                if (action === 'close-widget') {
+                    e.stopPropagation();
+                    const item = btn.closest('.grid-stack-item');
+                    if (!item) return;
+                    const attrId = item.querySelector('.cbio-widget')?.dataset.attrId;
+                    grid.removeWidget(item);
+                    hideInfoPopover(); hideWidgetMenu();
+                    if (attrId) relayoutDashboard(attrId, grid);
+                    return;
+                }
+                if (action === 'menu-widget') {
+                    e.stopPropagation();
+                    hideInfoPopover();
+                    showWidgetMenu(btn);
+                    return;
+                }
+                if (action === 'toggle-view') {
+                    e.stopPropagation();
+                    hideWidgetMenu();
+                    toggleViewMode(btn.dataset.attrId);
+                    return;
+                }
+                if (action === 'download-csv') {
+                    e.stopPropagation();
+                    hideWidgetMenu();
+                    downloadCSV(btn.dataset.attrId);
+                    return;
+                }
+                if (action === 'download-svg') {
+                    e.stopPropagation();
+                    hideWidgetMenu();
+                    downloadSVG(btn.dataset.attrId);
+                    return;
+                }
+            }
+            // Click outside → close menu
+            if (!e.target.closest('#cbio-widget-menu')) hideWidgetMenu();
+        });
     });
 </script>
 {% endblock %}

@@ -25,6 +25,33 @@ FREQ_TOLERANCE = 0.5   # percentage points
 COUNT_TOLERANCE = 5    # allowed absolute diff for clinical bucket counts (version drift)
 N_MUT_TOLERANCE = 10   # allowed absolute diff for mutation event counts (version drift)
 
+EXPECTED_CHART_ORDER = [
+    "Cancer Type",                                # priority 3000
+    "Clinical Group",                             # priority 3000
+    "Clinical Summary",                           # priority 3000
+    "Diagnosis Description",                      # priority 3000
+    "ICD-O Histology Description",                # priority 3000
+    "Pathological Group",                         # priority 3000
+    "Cancer Type Detailed",                       # priority 2000
+    "Overall Survival Status",                    # priority 1000
+    "Sample Type",                                # priority  990
+    "Race",                                       # priority  980
+    "Sex",                                        # priority  970
+    "Stage (Highest Recorded)",                   # priority  960
+    "Ethnicity",                                  # priority  950
+    "MSI Type",                                   # priority  910
+    "Gene Panel",                                 # priority  900
+    "Current Age",                                # priority  880
+    "Smoking History (NLP)",                      # priority  870
+    "Somatic Status",                             # priority  860
+    "Prior Treatment to MSK (NLP)",               # priority  760
+    "KM Plot: Overall (months)",                  # priority  400
+    "Mutated Genes",                              # priority   90
+    "CNA Genes",                                  # priority   80
+    "Structural Variant Genes",                   # priority   70
+    "Mutation Count vs Fraction Genome Altered",  # priority   50
+]
+
 
 # ---------------------------------------------------------------------------
 # Smoke tests — all endpoints return 200 + expected structure
@@ -558,3 +585,74 @@ class TestDataIntegrity:
                 assert row["n_samples"] <= row["n_profiled"], (
                     f"Gene {row['gene']}: n_samples={row['n_samples']} > n_profiled={row['n_profiled']}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# charts-meta integration test
+# ---------------------------------------------------------------------------
+
+def test_charts_meta_msk_chord(client):
+    """GET /study/summary/charts-meta returns expected chart metadata for msk_chord_2024."""
+    resp = client.get(f"/study/summary/charts-meta?id={STUDY_ID}")
+    resp.raise_for_status()
+    charts = resp.json()
+    assert isinstance(charts, list) and len(charts) > 0, "charts-meta returned empty list"
+
+    by_attr = {c["attr_id"]: c for c in charts}
+
+    # CANCER_TYPE must be present at high priority with table chart type
+    assert "CANCER_TYPE" in by_attr, "CANCER_TYPE missing from charts-meta"
+    ct = by_attr["CANCER_TYPE"]
+    assert ct["chart_type"] == "table", f"CANCER_TYPE chart_type={ct['chart_type']}, expected 'table'"
+    assert ct["priority"] >= 1000, f"CANCER_TYPE priority={ct['priority']}, expected >= 1000"
+
+    # GENDER (or SEX) should be present as a pie chart
+    gender_attr = next((c for c in charts if c["attr_id"] in ("GENDER", "SEX")), None)
+    assert gender_attr is not None, "No GENDER/SEX attr in charts-meta"
+    assert gender_attr["chart_type"] == "pie", f"GENDER chart_type={gender_attr['chart_type']}, expected 'pie'"
+
+    # CLINICAL_GROUP has many distinct values — should be promoted to table
+    if "CLINICAL_GROUP" in by_attr:
+        cg = by_attr["CLINICAL_GROUP"]
+        assert cg["chart_type"] == "table", (
+            f"CLINICAL_GROUP chart_type={cg['chart_type']}, expected 'table' (high-cardinality attr)"
+        )
+
+    # Mutated genes special chart should be present (msk_chord has mutations)
+    assert "_mutated_genes" in by_attr, "_mutated_genes missing from charts-meta"
+
+    # No item should have priority 0
+    for c in charts:
+        assert c["priority"] != 0, f"Chart {c['attr_id']} has priority=0, should be excluded"
+
+    # Results must be sorted by priority descending
+    priorities = [c["priority"] for c in charts]
+    assert priorities == sorted(priorities, reverse=True), "charts-meta not sorted by priority desc"
+
+
+def test_chart_order_msk_chord(client):
+    """Chart display names must appear in the expected priority order for msk_chord_2024."""
+    import re
+
+    resp = client.get(f"/study/summary/charts-meta?id={STUDY_ID}")
+    resp.raise_for_status()
+    charts = resp.json()
+
+    # Normalize display names: strip trailing " (N profiled samples)"
+    _sample_count_re = re.compile(r"\s*\(\d+ profiled samples\)$")
+    actual_order = [
+        _sample_count_re.sub("", c["display_name"]) for c in charts
+    ]
+
+    # Every expected name must appear, in sequence
+    remaining = list(actual_order)
+    for expected_name in EXPECTED_CHART_ORDER:
+        try:
+            idx = remaining.index(expected_name)
+        except ValueError:
+            pytest.fail(
+                f"Expected chart '{expected_name}' not found in charts-meta. "
+                f"Available: {actual_order}"
+            )
+        remaining = remaining[idx + 1:]
+

@@ -35,6 +35,7 @@ MANIFEST
 
 # Other
 .DS_Store
+tests/visual/screenshots/
 .playwright-cli/
 .deepeval/
 .pytest_cache/
