@@ -151,7 +151,7 @@ class ChartMetaRow(BaseModel):
     attr_id: str
     display_name: str
     chart_type: str
-    datatype: str
+    datatype: str | None = None
     priority: int
     w: int
     h: int
