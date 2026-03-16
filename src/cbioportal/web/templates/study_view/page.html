@@ -100,7 +100,8 @@
     };
 
     const Charts = { Pies: {}, Bars: {}, Scatter: null, KM: null };
-    const widgetData = {}; // last-fetched data per attrId for CSV download
+    const widgetData = {};        // last-fetched data per attrId for CSV download
+    const tableSearchState = {};  // current search query per attrId (string | undefined)
 
     // Age-like column names that should use the dedicated /age (binned histogram) endpoint
     const AGE_COLS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
@@ -112,6 +113,119 @@
         if (freq === 0) return '0%';
         if (freq >= 99.9) return '99.9%';
         return freq.toFixed(1) + '%';
+    }
+
+    function filterTableData(attrId, items, query) {
+        if (!query || !query.trim()) return items;
+        const q = query.trim().toLowerCase();
+        if (attrId === '_mutated_genes')
+            return items.filter(item => item.gene.toLowerCase().includes(q));
+        if (attrId === '_cna_genes')
+            return items.filter(item =>
+                item.gene.toLowerCase().includes(q) ||
+                item.cna_type.toLowerCase().includes(q)
+            );
+        if (attrId === '_sv_genes')
+            return items.filter(item => item.gene.toLowerCase().includes(q));
+        if (attrId === '_data_types')
+            return items.filter(item => item.display_name.toLowerCase().includes(q));
+        // Clinical 'table' widgets
+        return items.filter(item => item.value.toLowerCase().includes(q));
+    }
+
+    function renderTableTbody(attrId, data) {
+        const tbody = document.getElementById(`table-body-${attrId}`);
+        const selectAllBtn = document.getElementById(`btn-select-all-${attrId}`);
+        if (!tbody) return;
+        const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+        const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+        // Button operates on full widgetData, not the filtered subset
+        if (selectAllBtn) {
+            const fullData = widgetData[attrId] || [];
+            const allSelected = fullData.length > 0 && fullData.every(item => selectedValues.includes(item.value));
+            selectAllBtn.innerText = allSelected ? 'Deselect all' : 'Select all';
+            selectAllBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleSelectAll(attrId, fullData, allSelected);
+            };
+        }
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            const isSelected = selectedValues.includes(item.value);
+            const tr = document.createElement('tr');
+            if (isSelected) tr.className = 'selected';
+            tr.innerHTML = `
+                    <td><div class="cbio-color-swatch" style="background-color: ${item.color};"></div><span class="cbio-table-label" title="${item.value}">${item.value}</span></td>
+                    <td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.count.toLocaleString()}</span></div></td>
+                    <td class="cbio-table-freq">${formatFreq(item.pct, item.count)}</td>
+                `;
+            tr.onclick = (e) => { e.stopPropagation(); toggleFilter(attrId, item.value); };
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderGenomicTableTbody(data) {
+        const tbody = document.getElementById('table-body-_mutated_genes');
+        if (!tbody) return;
+        const selectedGenes = DashboardState.filters.mutationFilter.genes;
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            const isSelected = selectedGenes.includes(item.gene);
+            const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
+            tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_mut.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
+            tr.onclick = (e) => { e.stopPropagation(); toggleMutationFilter(item.gene); };
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderCNATableTbody(data) {
+        const tbody = document.getElementById('table-body-_cna_genes');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox"><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderSVTableTbody(data) {
+        const tbody = document.getElementById('table-body-_sv_genes');
+        if (!tbody) return;
+        const selectedGenes = DashboardState.filters.svFilter.genes;
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            const isSelected = selectedGenes.includes(item.gene);
+            const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
+            tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_sv.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
+            tr.onclick = (e) => { e.stopPropagation(); toggleSVFilter(item.gene); };
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderDataTypesTbody(data) {
+        const tbody = document.getElementById('table-body-_data_types');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                    <td style="padding-left:10px;">${item.display_name}</td>
+                    <td style="text-align:right;">${item.count.toLocaleString()}</td>
+                    <td style="text-align:right;">${formatFreq(item.freq, item.count)}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function reRenderTableTbody(attrId) {
+        const data = widgetData[attrId];
+        if (!data) return;
+        const filtered = filterTableData(attrId, data, tableSearchState[attrId]);
+        if (attrId === '_mutated_genes') { renderGenomicTableTbody(filtered); return; }
+        if (attrId === '_cna_genes')     { renderCNATableTbody(filtered);     return; }
+        if (attrId === '_sv_genes')      { renderSVTableTbody(filtered);      return; }
+        if (attrId === '_data_types')    { renderDataTypesTbody(filtered);    return; }
+        renderTableTbody(attrId, filtered);
     }
 
     function getFiltersForWidget(excludeAttrId) {
@@ -126,7 +240,6 @@
     async function updateTableWidget(attrId) {
         const widget = document.getElementById(`widget-${attrId}`);
         const tbody = document.getElementById(`table-body-${attrId}`);
-        const selectAllBtn = document.getElementById(`btn-select-all-${attrId}`);
         if (!tbody) return;
         const loader = document.createElement('div'); loader.className = 'loading-overlay'; loader.innerText = '...';
         widget.querySelector('.cbio-widget-content').appendChild(loader);
@@ -139,31 +252,8 @@
             const json = await response.json();
             const data = json.data || [];
             widgetData[attrId] = data;
-            const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
-            const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
-
-            if (selectAllBtn) {
-                const allSelected = data.length > 0 && data.every(item => selectedValues.includes(item.value));
-                selectAllBtn.innerText = allSelected ? 'Deselect all' : 'Select all';
-                selectAllBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    toggleSelectAll(attrId, data, allSelected);
-                };
-            }
-
-            tbody.innerHTML = '';
-            data.forEach(item => {
-                const isSelected = selectedValues.includes(item.value);
-                const tr = document.createElement('tr');
-                if (isSelected) tr.className = 'selected';
-                tr.innerHTML = `
-                    <td><div class="cbio-color-swatch" style="background-color: ${item.color};"></div><span class="cbio-table-label" title="${item.value}">${item.value}</span></td>
-                    <td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.count.toLocaleString()}</span></div></td>
-                    <td class="cbio-table-freq">${formatFreq(item.pct, item.count)}</td>
-                `;
-                tr.onclick = (e) => { e.stopPropagation(); toggleFilter(attrId, item.value); };
-                tbody.appendChild(tr);
-            });
+            const filtered = filterTableData(attrId, data, tableSearchState[attrId]);
+            renderTableTbody(attrId, filtered);
         } finally { loader.remove(); }
     }
 
@@ -250,9 +340,8 @@
     }
 
     async function updateGenomicTableWidget() {
-        const widget = document.getElementById(`widget-_mutated_genes`);
-        const tbody = document.getElementById(`table-body-_mutated_genes`);
-        const titleEl = document.getElementById(`title-_mutated_genes`);
+        const tbody = document.getElementById('table-body-_mutated_genes');
+        const titleEl = document.getElementById('title-_mutated_genes');
         if (!tbody) return;
         try {
             const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_mutated_genes')));
@@ -260,22 +349,14 @@
             const data = await response.json() || [];
             widgetData['_mutated_genes'] = data;
             if (titleEl) titleEl.innerText = `Mutated Genes (${DashboardState.nSamples} profiled samples)`;
-            const selectedGenes = DashboardState.filters.mutationFilter.genes;
-            tbody.innerHTML = '';
-            data.forEach(item => {
-                const isSelected = selectedGenes.includes(item.gene);
-                const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
-                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_mut.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
-                tr.onclick = (e) => { e.stopPropagation(); toggleMutationFilter(item.gene); };
-                tbody.appendChild(tr);
-            });
+            const filtered = filterTableData('_mutated_genes', data, tableSearchState['_mutated_genes']);
+            renderGenomicTableTbody(filtered);
         } catch (e) {}
     }
 
     async function updateCNATableWidget() {
-        const widget = document.getElementById(`widget-_cna_genes`);
-        const tbody = document.getElementById(`table-body-_cna_genes`);
-        const titleEl = document.getElementById(`title-_cna_genes`);
+        const tbody = document.getElementById('table-body-_cna_genes');
+        const titleEl = document.getElementById('title-_cna_genes');
         if (!tbody) return;
         try {
             const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_cna_genes')));
@@ -283,19 +364,14 @@
             const data = await response.json() || [];
             widgetData['_cna_genes'] = data;
             if (titleEl) titleEl.innerText = `CNA Genes (${DashboardState.nSamples} profiled samples)`;
-            tbody.innerHTML = '';
-            data.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox"><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
-                tbody.appendChild(tr);
-            });
+            const filtered = filterTableData('_cna_genes', data, tableSearchState['_cna_genes']);
+            renderCNATableTbody(filtered);
         } catch (e) {}
     }
 
     async function updateSVTableWidget() {
-        const widget = document.getElementById(`widget-_sv_genes`);
-        const tbody = document.getElementById(`table-body-_sv_genes`);
-        const titleEl = document.getElementById(`title-_sv_genes`);
+        const tbody = document.getElementById('table-body-_sv_genes');
+        const titleEl = document.getElementById('title-_sv_genes');
         if (!tbody) return;
         try {
             const formData = new FormData(); formData.append('study_id', DashboardState.studyId); formData.append('filter_json', JSON.stringify(getFiltersForWidget('_sv_genes')));
@@ -303,15 +379,8 @@
             const data = await response.json() || [];
             widgetData['_sv_genes'] = data;
             if (titleEl) titleEl.innerText = `Structural Variant Genes (${DashboardState.nSamples} profiled samples)`;
-            const selectedGenes = DashboardState.filters.svFilter.genes;
-            tbody.innerHTML = '';
-            data.forEach(item => {
-                const isSelected = selectedGenes.includes(item.gene);
-                const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
-                tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: right;">${item.n_sv.toLocaleString()}</td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
-                tr.onclick = (e) => { e.stopPropagation(); toggleSVFilter(item.gene); };
-                tbody.appendChild(tr);
-            });
+            const filtered = filterTableData('_sv_genes', data, tableSearchState['_sv_genes']);
+            renderSVTableTbody(filtered);
         } catch (e) {}
     }
 
@@ -416,15 +485,9 @@
             formData.append('filter_json', JSON.stringify(DashboardState.filters));
             const response = await fetch('/study/summary/chart/data-types?format=json', { method: 'POST', body: formData });
             const data = await response.json() || [];
-            tbody.innerHTML = '';
-            data.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="padding-left:10px;">${item.display_name}</td>
-                    <td style="text-align:right;">${item.count.toLocaleString()}</td>
-                    <td style="text-align:right;">${formatFreq(item.freq, item.count)}</td>`;
-                tbody.appendChild(tr);
-            });
+            widgetData['_data_types'] = data;
+            const filtered = filterTableData('_data_types', data, tableSearchState['_data_types']);
+            renderDataTypesTbody(filtered);
         } catch (e) {}
     }
 
@@ -885,6 +948,21 @@
         });
     }
 
+    function initSearchInputs() {
+        const debounceTimers = {};
+        document.getElementById('dashboard-grid').addEventListener('input', e => {
+            const input = e.target;
+            if (!input.classList.contains('cbio-search-input')) return;
+            const widget = input.closest('.cbio-widget');
+            if (!widget) return;
+            const attrId = widget.dataset.attrId;
+            if (!attrId) return;
+            tableSearchState[attrId] = input.value;
+            clearTimeout(debounceTimers[attrId]);
+            debounceTimers[attrId] = setTimeout(() => reRenderTableTbody(attrId), 400);
+        });
+    }
+
     function buildDashboard(chartsMeta, grid) {
         const items = chartsMeta.map(c => ({ ...c, html: buildWidgetHTML(c) })).filter(c => c.html);
         const positions = computeLayout(items);
@@ -892,6 +970,7 @@
             grid.addWidget({ w: c.w, h: c.h, x: positions[i].x, y: positions[i].y, content: c.html });
         });
         updateAll();
+        initSearchInputs();
     }
 
     // Re-pack remaining widgets into order after a close.
