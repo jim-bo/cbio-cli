@@ -62,3 +62,32 @@ a golden value when the user explicitly approves it after reviewing the discrepa
 ## git
 - every feature needs to be implemented on a feature branch
 - don't credit the coding agents in commit messages, keep them short
+
+## Worktree layout
+
+The repo uses git worktrees so coding agents and the user never collide on branches.
+
+```
+cbio-revamp/
+├── cbio-implement/    # main branch — user's primary working directory, never modify directly
+├── claude-worktree/   # Claude's feature branch workspace
+└── gemini-worktree/   # Gemini's feature branch workspace
+```
+
+**Rules for coding agents:**
+- **Claude** does all feature work inside `claude-worktree/`
+- **Gemini** does all feature work inside `gemini-worktree/`
+- `cbio-implement/` always tracks `main` — agents never check out or commit there
+- Each agent creates a feature branch inside its own worktree:
+  ```bash
+  git -C /path/to/claude-worktree checkout -b feature/my-feature
+  ```
+- When the feature is ready, the user merges from `cbio-implement/`:
+  ```bash
+  git merge feature/my-feature
+  ```
+- After merging, the agent resets its worktree to detached HEAD at main:
+  ```bash
+  git -C /path/to/claude-worktree checkout --detach main
+  git branch -d feature/my-feature
+  ```
