@@ -10,7 +10,7 @@ from cbioportal.cli.commands import beta, config_cmd, data, search
 app = typer.Typer(help="cbio — cBioPortal data access from your terminal")
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     no_interactive: bool = typer.Option(
@@ -21,6 +21,9 @@ def main(
 ) -> None:
     ctx.ensure_object(dict)
     ctx.obj["interactive"] = not no_interactive and sys.stdout.isatty()
+    if ctx.invoked_subcommand is None and sys.stdout.isatty():
+        from cbioportal.cli.display.tui import run_repl
+        run_repl()
 
 
 app.add_typer(search.app, name="search")
