@@ -1,0 +1,99 @@
+<div id="clinical-data-table-container">
+    <div class="clinical-table-wrapper">
+        <table class="clinical-data-table table-striped">
+            <thead>
+                <tr>
+                    <th class="sortable {% if sort_col == 'PATIENT_ID' %}active{% endif %}"
+                        hx-post="/study/clinicalData/table"
+                        hx-target="#clinical-data-table-container"
+                        hx-vals='js:{"study_id": "{{ study_id }}", "sort_col": "PATIENT_ID", "sort_dir": "{{ 'desc' if sort_col == 'PATIENT_ID' and sort_dir == 'asc' else 'asc' }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                        Patient ID {% if sort_col == 'PATIENT_ID' %}<i class="fa fa-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
+                    </th>
+                    <th class="sortable {% if sort_col == 'SAMPLE_ID' %}active{% endif %}"
+                        hx-post="/study/clinicalData/table"
+                        hx-target="#clinical-data-table-container"
+                        hx-vals='js:{"study_id": "{{ study_id }}", "sort_col": "SAMPLE_ID", "sort_dir": "{{ 'desc' if sort_col == 'SAMPLE_ID' and sort_dir == 'asc' else 'asc' }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                        Sample ID {% if sort_col == 'SAMPLE_ID' %}<i class="fa fa-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
+                    </th>
+                    {% for col in columns %}
+                    <th class="sortable {% if sort_col == col.id %}active{% endif %}"
+                        title="{{ col.name }}"
+                        hx-post="/study/clinicalData/table"
+                        hx-target="#clinical-data-table-container"
+                        hx-vals='js:{"study_id": "{{ study_id }}", "sort_col": "{{ col.id }}", "sort_dir": "{{ 'desc' if sort_col == col.id and sort_dir == 'asc' else 'asc' }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                        {{ col.name }} {% if sort_col == col.id %}<i class="fa fa-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    <td><a href="#">{{ row.PATIENT_ID }}</a></td>
+                    <td><a href="#">{{ row.SAMPLE_ID }}</a></td>
+                    {% for col in columns %}
+                    <td>
+                        {% if row[col.id] is none or row[col.id] == "" %}
+                        <span class="missing-data">—</span>
+                        {% else %}
+                        {{ row[col.id] }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="clinical-pagination-toolbar">
+        <div class="pagination-info">
+            Showing {{ offset + 1 }}-{{ [offset + limit, total_count] | min }} of {{ total_count | comma_number }} results
+        </div>
+        <div class="pagination-controls">
+            <button class="btn btn-default btn-sm"
+                    {% if offset <= 0 %}disabled{% endif %}
+                    hx-post="/study/clinicalData/table"
+                    hx-target="#clinical-data-table-container"
+                    hx-vals='js:{"study_id": "{{ study_id }}", "offset": {{ [0, offset - limit] | max }}, "limit": {{ limit }}, "sort_col": "{{ sort_col }}", "sort_dir": "{{ sort_dir }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                <i class="fa fa-angle-left"></i>
+            </button>
+            
+            <button class="btn btn-primary btn-sm show-more-btn"
+                    {% if offset + limit >= total_count %}disabled{% endif %}
+                    hx-post="/study/clinicalData/table"
+                    hx-target="#clinical-data-table-container"
+                    hx-vals='js:{"study_id": "{{ study_id }}", "offset": {{ offset }}, "limit": {{ limit + 20 }}, "sort_col": "{{ sort_col }}", "sort_dir": "{{ sort_dir }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                Show more
+            </button>
+
+            <button class="btn btn-default btn-sm"
+                    {% if offset + limit >= total_count %}disabled{% endif %}
+                    hx-post="/study/clinicalData/table"
+                    hx-target="#clinical-data-table-container"
+                    hx-vals='js:{"study_id": "{{ study_id }}", "offset": {{ offset + limit }}, "limit": {{ limit }}, "sort_col": "{{ sort_col }}", "sort_dir": "{{ sort_dir }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                <i class="fa fa-angle-right"></i>
+            </button>
+
+            <a href="#" class="reset-link"
+               hx-post="/study/clinicalData/table"
+               hx-target="#clinical-data-table-container"
+               hx-vals='js:{"study_id": "{{ study_id }}", "offset": 0, "limit": 20, "sort_col": "SAMPLE_ID", "sort_dir": "asc", "search": "", "filter_json": JSON.stringify(DashboardState.filters)}'
+               onclick="document.getElementById('clinical-search').value = '';">
+                Reset
+            </a>
+        </div>
+        <div class="items-per-page">
+            <select class="form-control input-sm"
+                    name="limit"
+                    hx-post="/study/clinicalData/table"
+                    hx-target="#clinical-data-table-container"
+                    hx-vals='js:{"study_id": "{{ study_id }}", "offset": 0, "sort_col": "{{ sort_col }}", "sort_dir": "{{ sort_dir }}", "search": document.getElementById("clinical-search")?.value || "", "filter_json": JSON.stringify(DashboardState.filters)}'>
+                <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+                <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+                <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
+    </div>
+</div>

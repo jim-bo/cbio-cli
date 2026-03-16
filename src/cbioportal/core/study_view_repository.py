@@ -1168,3 +1168,111 @@ def build_filtered_sample_ids(conn, study_id: str, filter_json: str | None) -> l
         return [r[0] for r in rows]
     except:
         return None
+
+
+def get_clinical_data_table(
+    conn,
+    study_id: str,
+    filter_json: str | None = None,
+    search: str | None = None,
+    sort_col: str | None = None,
+    sort_dir: str = "asc",
+    offset: int = 0,
+    limit: int = 20,
+) -> dict:
+    """Return clinical data rows, column metadata, and total count for the clinical data tab."""
+    # 1. Fetch column metadata
+    # We want a predictable order. Patient ID and Sample ID are always first.
+    # The rest come from clinical_attribute_meta.
+    cols_meta = conn.execute(
+        "SELECT attr_id, display_name, datatype, patient_attribute "
+        "FROM clinical_attribute_meta WHERE study_id = ? "
+        "ORDER BY priority ASC, attr_id ASC",
+        (study_id,)
+    ).fetchall()
+
+    columns = []
+    for cid, dn, dtype, is_patient in cols_meta:
+        columns.append({
+            "id": cid,
+            "name": dn,
+            "datatype": dtype,
+            "is_patient": bool(is_patient)
+        })
+
+    # 2. Build Query
+    # DuckDB column names might need quoting if they have spaces or special chars
+    # but loader.py seems to normalize them or use them as-is from file.
+    # We'll quote them all to be safe.
+    select_parts = ['s.SAMPLE_ID', 's.PATIENT_ID']
+    for col in columns:
+        prefix = 'p' if col['is_patient'] else 's'
+        select_parts.append(f'{prefix}."{col["id"]}"')
+
+    filter_sql, params = _build_filter_subquery(conn, study_id, filter_json)
+    
+    base_sql = (
+        f"FROM \"{study_id}_sample\" s "
+        f"JOIN \"{study_id}_patient\" p ON s.PATIENT_ID = p.PATIENT_ID "
+        f"WHERE s.SAMPLE_ID IN ({filter_sql})"
+    )
+
+    query_params = list(params)
+
+    # 3. Add Search
+    if search:
+        search_clauses = []
+        search_term = f"%{search}%"
+        # Check ID columns
+        search_clauses.append("CAST(s.SAMPLE_ID AS VARCHAR) ILIKE ?")
+        search_clauses.append("CAST(s.PATIENT_ID AS VARCHAR) ILIKE ?")
+        query_params.extend([search_term, search_term])
+        
+        # Check clinical columns (only if string-ish or if we want to search numbers too)
+        # To be safe and comprehensive, we cast everything to VARCHAR for ILIKE
+        for col in columns:
+            prefix = 'p' if col['is_patient'] else 's'
+            search_clauses.append(f'CAST({prefix}."{col["id"]}" AS VARCHAR) ILIKE ?')
+            query_params.append(search_term)
+        
+        base_sql += f" AND ({' OR '.join(search_clauses)})"
+
+    # 4. Get Total Count
+    total_count = conn.execute(f"SELECT COUNT(*) {base_sql}", query_params).fetchone()[0]
+
+    # 5. Sorting
+    order_by = ""
+    if sort_col:
+        # Check if sort_col is one of our columns
+        found_col = next((c for c in columns if c['id'] == sort_col), None)
+        if found_col:
+            prefix = 'p' if found_col['is_patient'] else 's'
+            order_by = f'ORDER BY {prefix}."{sort_col}" {sort_dir} NULLS LAST'
+        elif sort_col == 'SAMPLE_ID':
+            order_by = f'ORDER BY s.SAMPLE_ID {sort_dir} NULLS LAST'
+        elif sort_col == 'PATIENT_ID':
+            order_by = f'ORDER BY s.PATIENT_ID {sort_dir} NULLS LAST'
+    else:
+        order_by = "ORDER BY s.SAMPLE_ID ASC"
+
+    # 6. Final Query with Pagination
+    final_sql = f"SELECT {', '.join(select_parts)} {base_sql} {order_by} LIMIT ? OFFSET ?"
+    query_params.extend([limit, offset])
+    
+    rows_raw = conn.execute(final_sql, query_params).fetchall()
+    
+    # Map raw rows to dicts using select_parts labels (without table prefixes)
+    # select_parts labels are: SAMPLE_ID, PATIENT_ID, col1, col2, ...
+    column_names = ['SAMPLE_ID', 'PATIENT_ID'] + [c['id'] for c in columns]
+    
+    data = []
+    for row in rows_raw:
+        data.append(dict(zip(column_names, row)))
+
+    return {
+        "data": data,
+        "columns": columns,
+        "total_count": total_count,
+        "offset": offset,
+        "limit": limit
+    }

@@ -73,7 +73,53 @@ async def study_summary(request: Request, id: str):
     if not meta:
         raise HTTPException(status_code=404, detail="Study not found")
     return request.app.state.templates.TemplateResponse(
-        "study_view/page.html", {"request": request, "meta": meta}
+        "study_view/page.html", {"request": request, "meta": meta, "active_tab": "summary"}
+    )
+
+
+@router.get("/study/clinicalData", response_class=HTMLResponse)
+async def study_clinical_data(request: Request, id: str):
+    conn = request.app.state.db_conn
+    meta = get_study_metadata(conn, id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Study not found")
+    return request.app.state.templates.TemplateResponse(
+        "study_view/page.html", {"request": request, "meta": meta, "active_tab": "clinicalData"}
+    )
+
+
+@router.post("/study/clinicalData/table", response_class=HTMLResponse)
+async def study_clinical_data_table(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    filter_json: Annotated[str, Form()] = "{}",
+    search: Annotated[str, Form()] = "",
+    sort_col: Annotated[str, Form()] = "SAMPLE_ID",
+    sort_dir: Annotated[str, Form()] = "asc",
+    offset: Annotated[int, Form()] = 0,
+    limit: Annotated[int, Form()] = 20,
+):
+    conn = request.app.state.db_conn
+    from cbioportal.core.study_view_repository import get_clinical_data_table
+    
+    result = get_clinical_data_table(
+        conn, study_id, filter_json, search, sort_col, sort_dir, offset, limit
+    )
+    
+    return request.app.state.templates.TemplateResponse(
+        "study_view/partials/clinical_data_table.html",
+        {
+            "request": request,
+            "study_id": study_id,
+            "data": result["data"],
+            "columns": result["columns"],
+            "total_count": result["total_count"],
+            "offset": result["offset"],
+            "limit": result["limit"],
+            "sort_col": sort_col,
+            "sort_dir": sort_dir,
+            "search": search,
+        }
     )
 
 

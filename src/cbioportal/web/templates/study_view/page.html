@@ -77,8 +77,38 @@
 
 {% block content %}
 {% include "study_view/partials/study_navbar.html" %}
+
 <div class="dashboard-container">
+    {% if active_tab == 'summary' %}
     <div class="grid-stack" id="dashboard-grid"></div>
+    {% else %}
+    <div class="clinical-data-toolbar">
+        <div class="toolbar-left">
+            <span class="results-count"><strong>{{ meta.n_samples | comma_number }}</strong> results</span>
+            <button class="btn btn-default btn-sm download-btn" title="Download data"><i class="fa fa-cloud-download"></i></button>
+        </div>
+        <div class="toolbar-right">
+            <div class="search-container">
+                <input type="text" id="clinical-search" name="search" class="form-control input-sm" 
+                       placeholder="Search..."
+                       hx-post="/study/clinicalData/table"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#clinical-data-table-container"
+                       hx-vals='js:{"study_id": "{{ meta.study_id }}", "search": document.getElementById("clinical-search").value, "filter_json": JSON.stringify(DashboardState.filters)}'>
+                <i class="fa fa-search search-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="clinical-table-outer-wrapper"
+         hx-post="/study/clinicalData/table"
+         hx-trigger="load"
+         hx-target="#clinical-data-table-container"
+         hx-vals='js:{"study_id": "{{ meta.study_id }}", "filter_json": JSON.stringify(DashboardState.filters)}'>
+        <div id="clinical-data-table-container">
+            <div class="loading-placeholder">Loading clinical data...</div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Singleton overlay elements -->
@@ -100,12 +130,6 @@
         filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] } },
         chartsMeta: [],
     };
-
-    const Charts = { Pies: {}, Bars: {}, Scatter: null, KM: null };
-    const widgetData = {}; // last-fetched data per attrId for CSV download
-
-    // Age-like column names that should use the dedicated /age (binned histogram) endpoint
-    const AGE_COLS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
 
     function broadcastUpdate() { 
         window.dispatchEvent(new CustomEvent('cbio-filter-changed')); 
@@ -136,6 +160,15 @@
         else f.clinicalDataFilters = f.clinicalDataFilters.filter(x => x.attributeId !== excludeAttrId);
         return f;
     }
+</script>
+
+{% if active_tab == 'summary' %}
+<script type="text/javascript">
+    const Charts = { Pies: {}, Bars: {}, Scatter: null, KM: null };
+    const widgetData = {}; // last-fetched data per attrId for CSV download
+
+    // Age-like column names that should use the dedicated /age (binned histogram) endpoint
+    const AGE_COLS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
 
     async function updateTableWidget(attrId) {
         const widget = document.getElementById(`widget-${attrId}`);
@@ -956,4 +989,5 @@
         });
     });
 </script>
+{% endif %}
 {% endblock %}
