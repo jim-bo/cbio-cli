@@ -63,6 +63,8 @@ def build_layout(state) -> Layout:
         if not opts:
             return []
         lines: list[tuple[str, str]] = []
+        if getattr(state, "selector_header", None):
+            lines.extend(state.selector_header)
         lines.append(("class:selector-hint", "  ↑↓ or tab to move · enter to select · esc to cancel\n"))
         for i, opt in enumerate(opts):
             if i == state.selector_index:

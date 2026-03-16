@@ -34,6 +34,7 @@ class AppState:
         # Inline selector state
         self.selector_options: list[str] | None = None
         self.selector_index: int = 0
+        self.selector_header: list[tuple[str, str]] | None = None
         self.selector_callback = None   # async (idx: int, text: str) -> None
 
         # Intercept next Enter press (e.g. output path step)
@@ -73,6 +74,7 @@ def build_app() -> Application:
         selected = state.selector_options[idx]
         state.selector_options = None
         state.selector_index = 0
+        state.selector_header = None
         if state.selector_callback:
             cb = state.selector_callback
             state.selector_callback = None
@@ -97,6 +99,7 @@ def build_app() -> Application:
     def selector_cancel(event):
         state.selector_options = None
         state.selector_index = 0
+        state.selector_header = None
         state.selector_callback = None
         event.app.invalidate()
 
