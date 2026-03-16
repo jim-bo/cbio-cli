@@ -15,6 +15,7 @@ class Study(BaseModel):
     description: str | None = None
     cancerType: CancerType | None = None
     allSampleCount: int = 0
+    sequencedSampleCount: int = 0
 
 
 class Mutation(BaseModel):

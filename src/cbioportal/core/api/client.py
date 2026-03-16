@@ -5,6 +5,7 @@ import httpx
 
 from cbioportal.core.cbio_config import get_config
 from cbioportal.core.api.models import ClinicalRow, CnaSegment, Mutation, Study
+from cbioportal.core.api import study_cache
 
 
 class CbioPortalClient:
@@ -40,14 +41,29 @@ class CbioPortalClient:
     # Stubbed API methods
     # ------------------------------------------------------------------
 
+    def fetch_all_studies(self) -> list[Study]:
+        """Fetch the complete study list from the portal (for cache population)."""
+        r = self.http.get(
+            f"{self.base_url}/api/studies",
+            params={"pageSize": 500, "sortBy": "studyId", "direction": "ASC", "projection": "DETAILED"},
+        )
+        r.raise_for_status()
+        return [Study.model_validate(s) for s in r.json()]
+
     def search_studies(
         self,
         query: str,
         cancer_type: str | None = None,
         min_samples: int | None = None,
     ) -> list[Study]:
-        """Search cBioPortal studies by keyword."""
-        raise NotImplementedError
+        """Search studies via local cache (fetches from API on cache miss/expiry)."""
+        cfg = get_config()
+        ttl = int(cfg.get("cache", {}).get("ttl_days", 180))
+        studies = study_cache.load(self.base_url, ttl)
+        if studies is None:
+            studies = self.fetch_all_studies()
+            study_cache.save(self.base_url, studies)
+        return study_cache.search(studies, query, cancer_type, min_samples)
 
     def get_study(self, study_id: str) -> Study:
         """Fetch a single study by ID."""
