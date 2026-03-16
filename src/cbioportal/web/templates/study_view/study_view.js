@@ -1,5 +1,5 @@
 /* study_view.js — Dashboard logic for the Study View summary tab.
-   Included via {% include "study_view/study_view.js" %} in page.html.
+   Included into page.html via Jinja2 include at render time.
    Requires: DashboardState, Charts, widgetData, tableSearchState globals set in page.html.
 */
 
