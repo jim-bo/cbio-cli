@@ -43,6 +43,12 @@ def _help(state, args) -> str:
     return "\n".join(lines)
 
 
+@register("/search", "Search cBioPortal studies")
+def _search_stub(state, args) -> str:
+    # Handled specially in _submit before dispatch; entry exists for tab completion
+    return ""
+
+
 @register("/clear", "Clear history and reset session")
 def _clear(state, args) -> str:
     state.history.clear()

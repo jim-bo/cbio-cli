@@ -132,7 +132,20 @@ async def _submit(text: str, state: AppState, app: Application) -> None:
 
     # Slash commands
     if text.startswith("/"):
+        parts = text.strip().split()
+        slash_cmd = parts[0].lower()
+        slash_args = parts[1:]
+
         state.history.add(HistoryEntry(MessageKind.COMMAND, text))
+
+        if slash_cmd == "/search":
+            if slash_args:
+                app.create_background_task(handle_search(slash_args, state, app))
+            else:
+                _show_search_subprompt(state, app)
+            app.invalidate()
+            return
+
         response = dispatch(text, state)
         if response:
             state.history.add(HistoryEntry(MessageKind.COMMAND_RESPONSE, response))
@@ -147,9 +160,7 @@ async def _submit(text: str, state: AppState, app: Application) -> None:
     match cmd:
         case "search":
             if not args:
-                state.history.add(HistoryEntry(MessageKind.USER, text))
-                state.history.add(HistoryEntry(MessageKind.NOTIFICATION, "Usage: search <query>"))
-                app.invalidate()
+                app.create_background_task(_search_word_cmd(state, app))
             else:
                 app.create_background_task(handle_search(args, state, app))
         case "pull":
@@ -171,6 +182,29 @@ async def _submit(text: str, state: AppState, app: Application) -> None:
             state.history.add(HistoryEntry(MessageKind.USER, text))
             state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"Unknown command: {cmd}  (try 'help')"))
             app.invalidate()
+
+
+def _show_search_subprompt(state: AppState, app: Application) -> None:
+    """Show an inline sub-prompt asking for the search query."""
+    state.history.add(HistoryEntry(MessageKind.COMMAND_RESPONSE, "Search query:"))
+
+    async def on_query(q: str) -> None:
+        q = q.strip()
+        if q:
+            state.history.add(HistoryEntry(MessageKind.USER, q))
+            await handle_search(q.split(), state, app)
+        else:
+            state.history.add(HistoryEntry(MessageKind.NOTIFICATION, "Search cancelled."))
+            app.invalidate()
+
+    state.on_submit_override = on_query
+
+
+async def _search_word_cmd(state: AppState, app: Application) -> None:
+    """Handle bare 'search' word command — same sub-prompt as /search with no args."""
+    state.history.add(HistoryEntry(MessageKind.USER, "search"))
+    _show_search_subprompt(state, app)
+    app.invalidate()
 
 
 def run_repl() -> None:
