@@ -128,11 +128,31 @@ def _show_output_prompt(state, app) -> None:
     async def on_output_confirmed(text: str) -> None:
         path = text.strip() or suggested
         state.history.add(HistoryEntry(MessageKind.USER, path))
-        # TODO: wire up actual data pull
-        state.history.add(HistoryEntry(
-            MessageKind.NOTIFICATION,
-            f"Pull not yet implemented — would save {state.flow_data_type.value} to {path}",
-        ))
+        
+        if state.flow_data_type.value == "mutations":
+            state.history.add(HistoryEntry(MessageKind.COMMAND_RESPONSE, f"Starting pull and export to {path}..."))
+            state.is_thinking = True
+            state.spinner_control.start(app, "Pulling mutations & annotating...")
+            app.invalidate()
+            
+            def _run_pull():
+                from cbioportal.core.data_puller import pull_and_export_mutations
+                pull_and_export_mutations(state.flow_study.studyId, path)
+                
+            try:
+                await asyncio.to_thread(_run_pull)
+                state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"✓ Successfully pulled and exported to {path}"))
+            except Exception as exc:
+                state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"Error during pull: {exc}"))
+            finally:
+                state.is_thinking = False
+                state.spinner_control.stop()
+        else:
+            state.history.add(HistoryEntry(
+                MessageKind.NOTIFICATION,
+                f"Pull for {state.flow_data_type.value} not yet implemented.",
+            ))
+            
         state.flow_study = None
         state.flow_data_type = None
         state.flow_format = None

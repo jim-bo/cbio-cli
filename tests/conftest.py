@@ -37,6 +37,28 @@ CLINICAL_CHARTS: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# CLI / Live API Test configuration
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-live-api", action="store_true", default=False, help="run tests that hit live APIs"
+    )
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live_api: mark test as hitting live APIs")
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-live-api"):
+        # --run-live-api given in cli: do not skip live_api tests
+        return
+    skip_live = pytest.mark.skip(reason="need --run-live-api option to run")
+    for item in items:
+        if "live_api" in item.keywords:
+            item.add_marker(skip_live)
+
+
+# ---------------------------------------------------------------------------
 # App / HTTP client
 # ---------------------------------------------------------------------------
 
