@@ -121,11 +121,6 @@ def build_app() -> Application:
             state.exit_requested = True
             event.app.invalidate()
 
-    @kb.add(Keys.Any)
-    def _reset_exit(event):
-        state.exit_requested = False
-        return NotImplemented
-
     layout = build_layout(state)
 
     app = Application(
