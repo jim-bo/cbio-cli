@@ -8,6 +8,9 @@ Returns _EMPTY_SCATTER sentinel when no eligible samples exist.
 import duckdb
 import pytest
 
+# Skip if web dependencies (scipy) are missing
+pytest.importorskip("scipy")
+
 from cbioportal.core.study_view_repository import get_tmb_fga_scatter
 
 STUDY = "test_scatter_study"

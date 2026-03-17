@@ -30,10 +30,12 @@ class AppState:
         self.input_field = None       # TextArea
         self.spinner_control = None   # SpinnerControl (set by build_layout)
         self.app = None               # Application
+        self.exit_requested = False
 
         # Inline selector state
         self.selector_options: list[str] | None = None
         self.selector_index: int = 0
+        self.selector_header: list[tuple[str, str]] | None = None
         self.selector_callback = None   # async (idx: int, text: str) -> None
 
         # Intercept next Enter press (e.g. output path step)
@@ -61,6 +63,7 @@ def build_app() -> Application:
 
     @kb.add("enter", filter=~selector_active)
     async def handle_enter(event):
+        state.exit_requested = False
         text = state.input_field.text.strip()
         if not text:
             return
@@ -69,10 +72,12 @@ def build_app() -> Application:
 
     @kb.add("enter", filter=selector_active, eager=True)
     def selector_confirm(event):
+        state.exit_requested = False
         idx = state.selector_index
         selected = state.selector_options[idx]
         state.selector_options = None
         state.selector_index = 0
+        state.selector_header = None
         if state.selector_callback:
             cb = state.selector_callback
             state.selector_callback = None
@@ -82,6 +87,7 @@ def build_app() -> Application:
     @kb.add("up", filter=selector_active, eager=True)
     @kb.add("s-tab", filter=selector_active, eager=True)
     def selector_up(event):
+        state.exit_requested = False
         if state.selector_options:
             state.selector_index = (state.selector_index - 1) % len(state.selector_options)
             event.app.invalidate()
@@ -89,20 +95,36 @@ def build_app() -> Application:
     @kb.add("down", filter=selector_active, eager=True)
     @kb.add("tab", filter=selector_active, eager=True)
     def selector_down(event):
+        state.exit_requested = False
         if state.selector_options:
             state.selector_index = (state.selector_index + 1) % len(state.selector_options)
             event.app.invalidate()
 
     @kb.add("escape", filter=selector_active, eager=True)
     def selector_cancel(event):
+        state.exit_requested = False
         state.selector_options = None
         state.selector_index = 0
+        state.selector_header = None
         state.selector_callback = None
         event.app.invalidate()
 
     @kb.add("c-c")
-    def exit_app(event):
+    def exit_app_cc(event):
         event.app.exit()
+
+    @kb.add("c-d")
+    def exit_app_cd(event):
+        if state.exit_requested:
+            event.app.exit()
+        else:
+            state.exit_requested = True
+            event.app.invalidate()
+
+    @kb.add(Keys.Any)
+    def _reset_exit(event):
+        state.exit_requested = False
+        return NotImplemented
 
     layout = build_layout(state)
 

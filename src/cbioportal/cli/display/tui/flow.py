@@ -21,40 +21,16 @@ def _fetch_studies_sync(query: str):
 
 
 def _add_table_header(state) -> None:
-    state.history.add(HistoryEntry(
-        kind=MessageKind.TABLE_ROW,
-        cells=[
-            ("class:table-header", f"  {'Study ID':<24}"),
-            ("class:table-header", f"{'Name':<40}"),
-            ("class:table-header", f"{'Samples':>8}  "),
-            ("class:table-header", "Cancer Type"),
-        ],
-    ))
-    state.history.add(HistoryEntry(
-        kind=MessageKind.TABLE_ROW,
-        cells=[
-            ("class:table-sep", f"  {'─' * 24}"),
-            ("class:table-sep", f"{'─' * 40}"),
-            ("class:table-sep", f"{'─' * 8}  "),
-            ("class:table-sep", "─" * 22),
-        ],
-    ))
-
-
-def _add_table_row(state, study) -> None:
-    study_id = study.studyId[:24]
-    name     = study.name[:40]
-    samples  = f"{study.sequencedSampleCount:,}"
-    cancer   = (study.cancerType.name if study.cancerType else "")[:22]
-    state.history.add(HistoryEntry(
-        kind=MessageKind.TABLE_ROW,
-        cells=[
-            ("class:table-id",      f"  {study_id:<24}"),
-            ("class:table-name",    f"{name:<40}"),
-            ("class:table-samples", f"{samples:>8}  "),
-            ("class:table-cancer",  cancer),
-        ],
-    ))
+    state.selector_header = [
+        ("class:table-header", f"    {'Study ID':<24}"),
+        ("class:table-header", f"{'Name':<40}"),
+        ("class:table-header", f"{'Samples':>8}  "),
+        ("class:table-header", "Cancer Type\n"),
+        ("class:table-sep", f"    {'─' * 24}"),
+        ("class:table-sep", f"{'─' * 40}"),
+        ("class:table-sep", f"{'─' * 8}  "),
+        ("class:table-sep", "─" * 22 + "\n"),
+    ]
 
 
 async def handle_search(args: list[str], state, app) -> None:
@@ -84,16 +60,18 @@ async def handle_search(args: list[str], state, app) -> None:
         return
 
     _add_table_header(state)
-    for s in studies:
-        _add_table_row(state, s)
 
     state.flow_studies = studies
 
     # Build display strings that match table columns for easy visual correlation
-    choices = [
-        f"{s.studyId:<24} {s.name[:40]}"
-        for s in studies
-    ]
+    choices = []
+    for s in studies:
+        study_id = s.studyId[:24]
+        name     = s.name[:40]
+        samples  = f"{s.sequencedSampleCount:,}"
+        cancer   = (s.cancerType.name if s.cancerType else "")[:22]
+        choices.append(f"{study_id:<24}{name:<40}{samples:>8}  {cancer}")
+
     state.selector_options = choices
     state.selector_index = 0
 
@@ -112,6 +90,7 @@ def _show_data_type_selector(state, app) -> None:
     data_types = list(DataType)
     state.selector_options = [dt.value for dt in data_types]
     state.selector_index = 0
+    state.selector_header = [("class:title", "  What data type are you looking to export?\n")]
 
     async def on_data_type_selected(idx: int, text: str) -> None:
         dt = list(DataType)[idx]
@@ -127,6 +106,7 @@ def _show_format_selector(state, app) -> None:
     formats = FORMAT_MAP[state.flow_data_type]
     state.selector_options = [f.value for f in formats]
     state.selector_index = 0
+    state.selector_header = [("class:title", "  What format would you like to export?\n")]
 
     async def on_format_selected(idx: int, text: str) -> None:
         formats = FORMAT_MAP[state.flow_data_type]
@@ -148,11 +128,31 @@ def _show_output_prompt(state, app) -> None:
     async def on_output_confirmed(text: str) -> None:
         path = text.strip() or suggested
         state.history.add(HistoryEntry(MessageKind.USER, path))
-        # TODO: wire up actual data pull
-        state.history.add(HistoryEntry(
-            MessageKind.NOTIFICATION,
-            f"Pull not yet implemented — would save {state.flow_data_type.value} to {path}",
-        ))
+        
+        if state.flow_data_type.value == "mutations":
+            state.history.add(HistoryEntry(MessageKind.COMMAND_RESPONSE, f"Starting pull and export to {path}..."))
+            state.is_thinking = True
+            state.spinner_control.start(app, "Pulling mutations & annotating...")
+            app.invalidate()
+            
+            def _run_pull():
+                from cbioportal.core.data_puller import pull_and_export_mutations
+                pull_and_export_mutations(state.flow_study.studyId, path)
+                
+            try:
+                await asyncio.to_thread(_run_pull)
+                state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"✓ Successfully pulled and exported to {path}"))
+            except Exception as exc:
+                state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"Error during pull: {exc}"))
+            finally:
+                state.is_thinking = False
+                state.spinner_control.stop()
+        else:
+            state.history.add(HistoryEntry(
+                MessageKind.NOTIFICATION,
+                f"Pull for {state.flow_data_type.value} not yet implemented.",
+            ))
+            
         state.flow_study = None
         state.flow_data_type = None
         state.flow_format = None

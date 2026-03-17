@@ -67,15 +67,93 @@ class CbioPortalClient:
 
     def get_study(self, study_id: str) -> Study:
         """Fetch a single study by ID."""
-        raise NotImplementedError
+        r = self.http.get(f"{self.base_url}/api/studies/{study_id}")
+        r.raise_for_status()
+        return Study.model_validate(r.json())
 
-    def get_mutations(
-        self,
-        study_id: str,
-        sample_ids: list[str] | None = None,
-    ) -> list[Mutation]:
-        """Fetch all mutations for a study, optionally filtered by sample IDs."""
-        raise NotImplementedError
+    def get_mutation_profile_id(self, study_id: str) -> str | None:
+        """Find the molecular profile ID for extended mutations for a study."""
+        r = self.http.get(f"{self.base_url}/api/studies/{study_id}/molecular-profiles")
+        r.raise_for_status()
+        profiles = r.json()
+        for p in profiles:
+            if p.get("molecularAlterationType") == "MUTATION_EXTENDED":
+                return p.get("molecularProfileId")
+        return None
+
+    def get_default_sample_list_id(self, study_id: str) -> str | None:
+        """Find the 'all samples' list ID for a study."""
+        r = self.http.get(f"{self.base_url}/api/studies/{study_id}/sample-lists")
+        r.raise_for_status()
+        lists = r.json()
+        for l in lists:
+            if l.get("category") == "all_cases_in_study":
+                return l.get("sampleListId")
+        # Fallback to the first list if none match exactly
+        return lists[0].get("sampleListId") if lists else None
+
+    def get_mutations_raw(self, molecular_profile_id: str, sample_list_id: str) -> list[dict]:
+        """Fetch all raw mutations for a given molecular profile and sample list with pagination."""
+        all_mutations = []
+        page_number = 0
+        page_size = 20000  # Safer limit for cBioPortal API
+        
+        while True:
+            r = self.http.post(
+                f"{self.base_url}/api/molecular-profiles/{molecular_profile_id}/mutations/fetch",
+                params={
+                    "pageNumber": page_number,
+                    "pageSize": page_size,
+                    "projection": "DETAILED"
+                },
+                json={"sampleListId": sample_list_id}
+            )
+            r.raise_for_status()
+            data = r.json()
+            
+            if not data:
+                break
+                
+            all_mutations.extend(data)
+            
+            # If we got less than page_size, we reached the end
+            if len(data) < page_size:
+                break
+                
+            page_number += 1
+            
+        return all_mutations
+
+    def get_clinical_data_raw(self, study_id: str, attribute_id: str, data_type: str = "SAMPLE") -> list[dict]:
+        """Fetch clinical data for a specific attribute (e.g., ONCOTREE_CODE) across the entire study."""
+        all_data = []
+        page_number = 0
+        page_size = 20000
+        
+        while True:
+            r = self.http.get(
+                f"{self.base_url}/api/studies/{study_id}/clinical-data",
+                params={
+                    "clinicalDataType": data_type,
+                    "attributeId": attribute_id,
+                    "pageNumber": page_number,
+                    "pageSize": page_size,
+                }
+            )
+            r.raise_for_status()
+            data = r.json()
+            
+            if not data:
+                break
+                
+            all_data.extend(data)
+            
+            if len(data) < page_size:
+                break
+                
+            page_number += 1
+            
+        return all_data
 
     def get_cna_segments(self, study_id: str) -> list[CnaSegment]:
         """Fetch CNA segments for a study."""

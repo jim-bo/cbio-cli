@@ -1,18 +1,17 @@
-# cBioPortal Revamp Implementation
+# cBioPortal-cli
 
-A modern, lightweight cBioPortal using FastAPI, Jinja2, HTMX, and DuckDB.
+An unofficial technology demonstration of what you can build with agentic coding tools.
+This should not be used for serious work, but you are more than welcome to explore
+this offshoot. Feedback is totally welcome.
 
 ## Overview
 
-Reimplements the cBioPortal web interface with a minimal Python stack — no Java,
-no Spring Boot, no separate database server. Study data is loaded from the cBioPortal
-datahub into a local DuckDB file; the FastAPI server serves the UI with HTMX-powered
-partial updates.
+A cbioportal CLI with a minimal Python stack that includes a rich, full-screen Terminal UI (TUI) for interacting with APIs, querying studies, and exporting customized genomic datasets.
 
 ## Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) for package management
-- A local clone of [cBioPortal/datahub](https://github.com/cBioPortal/datahub)
+- [Docker](https://www.docker.com/) (Optional, required for validating MAF exports)
 
 ## Setup
 
@@ -30,140 +29,73 @@ partial updates.
 
 ## CLI Reference
 
-All commands run via `uv run cbioportal <command>`.
+The primary interface is the interactive Terminal UI.
 
-### `db load-all`
+### `cbio` (Interactive TUI)
 
-Load all studies from the datahub into DuckDB.
-
-```bash
-uv run cbioportal db load-all [OPTIONS]
-```
-
-| Option | Description |
-|--------|-------------|
-| `--limit N` | Load only the first N studies (for testing) |
-| `--offset N` | Skip the first N studies |
-| `--mutations / --no-mutations` | Load mutation data (default: enabled) |
-| `--cna / --no-cna` | Load CNA data (default: enabled) |
-| `--sv / --no-sv` | Load structural variant data (default: disabled) |
-| `--timeline / --no-timeline` | Load timeline data (default: disabled) |
-
-Gene reference tables (`gene_reference`, `gene_symbol_updates`, `gene_alias`) are loaded
-automatically from `CBIO_DATAHUB` before study ingestion begins.
-
-### `db add <study_id>`
-
-Load a single study by its ID (directory name in datahub).
+Launch the full-screen interactive REPL:
 
 ```bash
-uv run cbioportal db add <study_id> [OPTIONS]
+uv run cbio
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--mutations / --no-mutations` | Load mutation data (default: enabled) |
-| `--cna / --no-cna` | Load CNA data (default: enabled) |
-| `--sv / --no-sv` | Load structural variant data (default: disabled) |
-| `--timeline / --no-timeline` | Load timeline data (default: disabled) |
+**Features & Commands within the TUI:**
+- `/search [query]`: Search the public cBioPortal for studies.
+- `pull`: Start the interactive data-pulling wizard to fetch, annotate (via MoAlmanac), and export MAF files for a selected study.
+- `/config`: View the current backend configuration.
+- `exit` (or press `Ctrl+D` twice): Safely exit the application.
 
-### `db remove <study_id>`
+*Note: The TUI caches API responses in a dedicated DuckDB file at `~/.cbio/cache/cache.duckdb` for high-speed offline analysis.*
 
-Remove all tables for a study from DuckDB and drop it from the studies table.
+### Advanced Database Commands (`cbio beta db`)
 
-```bash
-uv run cbioportal db remove <study_id>
-```
+If you need to manually load data from the local datahub clone (bypassing the interactive API puller):
 
-### `db load-lfs <study_id>`
-
-Re-load a single study's genomic data (mutations, CNA, SV) — useful after `git lfs pull`
-fetches the large data files that weren't available during initial `db add`.
-
-```bash
-uv run cbioportal db load-lfs <study_id> [OPTIONS]
-```
-
-Accepts the same `--mutations`, `--cna`, `--sv`, `--timeline` flags as `db add`.
-
-### `db sync-oncotree`
-
-Fetch the latest OncoTree cancer type hierarchy from the MSKCC API and store it in DuckDB.
-Required for correct study categorization on the homepage.
-
-```bash
-uv run cbioportal db sync-oncotree
-```
-
-### `db sync-gene-reference`
-
-Load/reload the `gene_reference` table from `$CBIO_DATAHUB/.circleci/portalinfo/genes.json`.
-Maps Entrez Gene ID → canonical HGNC Hugo symbol. Used by Pass 1 of Hugo normalization.
-
-```bash
-uv run cbioportal db sync-gene-reference
-```
-
-### `db sync-gene-symbol-updates`
-
-Load/reload the `gene_symbol_updates` table from
-`$CBIO_DATAHUB/seedDB/gene-update-list/gene-update.md`.
-Covers ~75 explicitly renamed genes (e.g. C10ORF12 → LCOR). Used by Pass 2 of Hugo normalization.
-
-```bash
-uv run cbioportal db sync-gene-symbol-updates
-```
-
-### `db sync-gene-aliases`
-
-Load/reload the `gene_alias` table from the cBioPortal seed SQL
-(`$CBIO_DATAHUB/seedDB/seed-cbioportal_hg19_hg38_*.sql.gz`).
-Contains ~55k NCBI alias entries. Required for Pass 3 of Hugo normalization (KMT2 family etc).
-
-```bash
-uv run cbioportal db sync-gene-aliases
-```
-
-### `db sync-gene-panels`
-
-Load/reload gene panel definitions from
-`$CBIO_DATAHUB/.circleci/portalinfo/gene-panels.json`.
-
-```bash
-uv run cbioportal db sync-gene-panels
-```
+- `uv run cbio beta db load-all`: Load all studies from the datahub into DuckDB.
+- `uv run cbio beta db add <study_id>`: Load a single study.
+- `uv run cbio beta db sync-oncotree`: Fetch the OncoTree hierarchy.
+- `uv run cbio beta db sync-gene-reference`: Load the `gene_reference` table.
 
 ## Running the Web App
 
+The web application requires the `web` optional dependencies (FastAPI, uvicorn, etc.).
+
 ```bash
-uv run cbioportal serve
+# Install web extras first
+uv sync --extra web
+
+# Launch the server
+uv run cbio serve
 ```
 
 The server starts on `http://localhost:8000` by default.
 
 ## Testing
 
-### Unit tests (fast, no real data)
+### Core Tests (Fast, No Web Extras)
+
+These tests cover the TUI, API clients, and core DuckDB logic.
 
 ```bash
-uv run pytest tests/unit/ -v
+uv run pytest tests/unit/ tests/integration/ -v
 ```
 
-Uses in-memory DuckDB. No real study data needed. Covers repository functions,
-loader logic, and edge cases (NULLs, empty tables, missing columns).
+*Note: Use `--run-live-api` and `--run-docker` for full API and export validation.*
 
-### Integration / golden tests
+### Web & Study View Tests
+
+These tests require the `[web]` optional dependencies (specifically `scipy` for genomic statistics).
 
 ```bash
-uv run pytest tests/test_study_view_charts.py -v
+uv run pytest tests/web/ -v
 ```
 
-Requires a real DuckDB with `msk_chord_2024` loaded. Compares chart data against
-JSON fixtures in `tests/fixtures/` captured from the public cBioPortal.
+### Golden Integration Tests
 
-To refresh golden fixtures:
+Compares Study View chart data against JSON fixtures from the public portal. Requires a real DuckDB with `msk_chord_2024` loaded.
+
 ```bash
-uv run python tests/capture_golden.py
+uv run pytest tests/web/test_study_view_charts.py -v
 ```
 
 ## Institutional Knowledge

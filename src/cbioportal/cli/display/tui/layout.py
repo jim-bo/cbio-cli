@@ -63,6 +63,8 @@ def build_layout(state) -> Layout:
         if not opts:
             return []
         lines: list[tuple[str, str]] = []
+        if getattr(state, "selector_header", None):
+            lines.extend(state.selector_header)
         lines.append(("class:selector-hint", "  ↑↓ or tab to move · enter to select · esc to cancel\n"))
         for i, opt in enumerate(opts):
             if i == state.selector_index:
@@ -101,13 +103,15 @@ def build_layout(state) -> Layout:
         return [("class:status-bar.mode", " cbio ")]
 
     def status_right():
+        if getattr(state, "exit_requested", False):
+            return [("class:warn", " hit ctrl-d again to exit ")]
         try:
             from cbioportal.core.cbio_config import get_config
             cfg = get_config()
             url = cfg.get("portal", {}).get("url", "")
         except Exception:
             url = ""
-        return [("class:status-bar", f" {url} · ctrl-c to quit ")]
+        return [("class:status-bar", f" {url} · ctrl-d to quit ")]
 
     status_bar = VSplit([
         Window(
