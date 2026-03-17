@@ -15,19 +15,12 @@ A cbioportal CLI with a minimal Python stack that includes a rich, full-screen T
 
 ## Setup
 
-1. Set environment variables:
-   ```bash
-   export CBIO_DATAHUB=/path/to/your/datahub
-   # Optional: override DuckDB path (default: data/cbioportal.duckdb)
-   export CBIO_DB_PATH=/path/to/cbioportal.duckdb
-   ```
-
-2. Install dependencies:
+1. Install dependencies:
    ```bash
    uv sync
    ```
 
-## CLI Reference
+## TUI Reference
 
 The primary interface is the interactive Terminal UI.
 
@@ -47,32 +40,9 @@ uv run cbio
 
 *Note: The TUI caches API responses in a dedicated DuckDB file at `~/.cbio/cache/cache.duckdb` for high-speed offline analysis.*
 
-### Advanced Database Commands (`cbio beta db`)
+## Testing (Core TUI)
 
-If you need to manually load data from the local datahub clone (bypassing the interactive API puller):
-
-- `uv run cbio beta db load-all`: Load all studies from the datahub into DuckDB.
-- `uv run cbio beta db add <study_id>`: Load a single study.
-- `uv run cbio beta db sync-oncotree`: Fetch the OncoTree hierarchy.
-- `uv run cbio beta db sync-gene-reference`: Load the `gene_reference` table.
-
-## Running the Web App
-
-The web application requires the `web` optional dependencies (FastAPI, uvicorn, etc.).
-
-```bash
-# Install web extras first
-uv sync --extra web
-
-# Launch the server
-uv run cbio serve
-```
-
-The server starts on `http://localhost:8000` by default.
-
-## Testing
-
-### Core Tests (Fast, No Web Extras)
+### Core Tests 
 
 These tests cover the TUI, API clients, and core DuckDB logic.
 
@@ -81,6 +51,51 @@ uv run pytest tests/unit/ tests/integration/ -v
 ```
 
 *Note: Use `--run-live-api` and `--run-docker` for full API and export validation.*
+
+---
+
+# [Beta] Web App & Local Database
+
+The experimental web app provides a local UI, and relies on an extensive offline ingestion process utilizing a local clone of the cBioPortal datahub.
+
+## Beta Prerequisites
+- A local clone of [cBioPortal/datahub](https://github.com/cBioPortal/datahub)
+
+## Beta Setup
+
+1. Set environment variables:
+   ```bash
+   export CBIO_DATAHUB=/path/to/your/datahub
+   # Optional: override DuckDB path (default: data/cbioportal.duckdb)
+   export CBIO_DB_PATH=/path/to/cbioportal.duckdb
+   ```
+
+2. Install web extras:
+   ```bash
+   uv sync --extra web
+   ```
+
+## Running the Web App
+
+The web application requires the `web` optional dependencies (FastAPI, uvicorn, etc.).
+
+```bash
+# Launch the server
+uv run cbio serve
+```
+
+The server starts on `http://localhost:8000` by default.
+
+## Advanced Database Commands (`cbio beta db`)
+
+If you need to manually load data from the local datahub clone (bypassing the interactive API puller):
+
+- `uv run cbio beta db load-all`: Load all studies from the datahub into DuckDB.
+- `uv run cbio beta db add <study_id>`: Load a single study.
+- `uv run cbio beta db sync-oncotree`: Fetch the OncoTree hierarchy.
+- `uv run cbio beta db sync-gene-reference`: Load the `gene_reference` table.
+
+## Testing (Web)
 
 ### Web & Study View Tests
 
@@ -98,7 +113,7 @@ Compares Study View chart data against JSON fixtures from the public portal. Req
 uv run pytest tests/web/test_study_view_charts.py -v
 ```
 
-## Institutional Knowledge
+## Institutional Knowledge (Beta Loaders)
 
 ### Gene counts must match cBioPortal's logic exactly
 
