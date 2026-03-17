@@ -103,13 +103,15 @@ def build_layout(state) -> Layout:
         return [("class:status-bar.mode", " cbio ")]
 
     def status_right():
+        if getattr(state, "exit_requested", False):
+            return [("class:warn", " hit ctrl-d again to exit ")]
         try:
             from cbioportal.core.cbio_config import get_config
             cfg = get_config()
             url = cfg.get("portal", {}).get("url", "")
         except Exception:
             url = ""
-        return [("class:status-bar", f" {url} · ctrl-c to quit ")]
+        return [("class:status-bar", f" {url} · ctrl-d to quit ")]
 
     status_bar = VSplit([
         Window(
