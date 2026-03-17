@@ -2,7 +2,7 @@
 
 ## Tech Stack (uv-managed)
 - **Runtime:** Python 3.12+ (managed via `uv`)
-- **CLI:** Typer (Command-line interface)
+- **CLI:** Typer (Command-line interface) + prompt_toolkit (Interactive TUI)
 - **Web:** FastAPI + Jinja2 + HTMX + Alpine.js
 - **Database:** DuckDB (Local persistence)
 - **Cache:** Redis (Optional fragment caching)
@@ -13,18 +13,28 @@ cbio-revamp/
 ├── pyproject.toml           # uv project/dependency config
 ├── src/
 │   └── cbioportal/          # Main package
-│       ├── cli/             # CLI: fetch, db, serve commands
-│       ├── core/            # Logic: DuckDB, data fetching
+│       ├── cli/             # CLI: cbio (TUI), beta db, serve commands
+│       ├── core/            # Logic: DuckDB, data fetching, API caching
 │       └── web/             # Web: app.py, routes, templates/
 ├── tests/                   # Pytest suite
 └── data/                    # Local .duckdb storage (git-ignored)
 ```
 
-## CLI Entry Points
-- `cbioportal fetch`: Download study data.
-- `cbioportal db`: Add/Remove/Update studies in DuckDB.
-- `cbioportal serve`: Launch FastAPI/HTMX webserver.
+## Architecture Notes
 
+**Interactive TUI (`src/cbioportal/cli/display/tui`)**
+- The CLI (`cbio`) is powered by `prompt_toolkit`.
+- It uses an async event loop (`Application.run_async()`) and maintains a global `AppState` object for tracking history, interactive selections, and active background tasks.
+- Avoid printing directly to `stdout`. Use `state.history.add()` and `event.app.invalidate()` to trigger UI renders.
+
+**API Caching (`src/cbioportal/core/cache.py`)**
+- Live cBioPortal and MoAlmanac API data is persistently cached in `~/.cbio/cache/cache.duckdb`.
+- The `data_puller.py` orchestrator relies on this DuckDB cache for high-speed relational joins (e.g., joining OncoTree contexts with large genomic datasets).
+
+## CLI Entry Points
+- `cbio`: Launch the interactive Terminal UI (TUI) for searching and pulling API data.
+- `cbio serve`: Launch FastAPI/HTMX webserver.
+- `cbio beta db`: Add/Remove/Update studies in DuckDB from a local datahub.
 
 ## Testing
 
@@ -42,11 +52,17 @@ Unit tests must cover:
 - Exclusion/inclusion logic (e.g. variant classifications, Mutation_Status filters)
 - Edge cases (NULL values, empty tables, missing columns)
 
-### Integration / golden tests
+### Integration / Golden tests
 `tests/test_study_view_charts.py` runs against the real DuckDB with loaded study data.
 These are slower; run them before opening a PR:
 ```bash
 uv run pytest tests/test_study_view_charts.py -v
+```
+
+### API & Export Validation Tests
+Marked with `@pytest.mark.live_api` and `@pytest.mark.docker`. They are skipped by default. To run them, explicitly pass `--run-live-api` and `--run-docker`:
+```bash
+uv run pytest tests/integration/ -v --run-live-api --run-docker
 ```
 
 **Any new feature that touches a repository function must pass both test suites.**
