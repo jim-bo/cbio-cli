@@ -44,18 +44,26 @@ def pytest_addoption(parser):
     parser.addoption(
         "--run-live-api", action="store_true", default=False, help="run tests that hit live APIs"
     )
+    parser.addoption(
+        "--run-docker", action="store_true", default=False, help="run tests that require Docker"
+    )
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "live_api: mark test as hitting live APIs")
+    config.addinivalue_line("markers", "docker: mark test as requiring Docker")
 
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--run-live-api"):
-        # --run-live-api given in cli: do not skip live_api tests
-        return
+    run_live = config.getoption("--run-live-api")
+    run_docker = config.getoption("--run-docker")
+    
     skip_live = pytest.mark.skip(reason="need --run-live-api option to run")
+    skip_docker = pytest.mark.skip(reason="need --run-docker option to run")
+    
     for item in items:
-        if "live_api" in item.keywords:
+        if "live_api" in item.keywords and not run_live:
             item.add_marker(skip_live)
+        if "docker" in item.keywords and not run_docker:
+            item.add_marker(skip_docker)
 
 
 # ---------------------------------------------------------------------------
