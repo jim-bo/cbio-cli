@@ -1,20 +1,16 @@
-# cBioPortal Revamp Implementation
+# cBioPortal-cli
 
-A modern, lightweight cBioPortal using FastAPI, Jinja2, HTMX, and DuckDB.
+An unofficial technology demonstration of what you can build with agentic coding tools.
+This should not be used for serious work, but you are more than welcome to explore
+this offshoot. Feedback is totally welcome.
 
 ## Overview
 
-Reimplements the cBioPortal web interface and CLI with a minimal Python stack — no Java,
-no Spring Boot, no separate database server. Study data is loaded from the cBioPortal
-datahub into a local DuckDB file; the FastAPI server serves the UI with HTMX-powered
-partial updates. 
-
-This project also includes a rich, full-screen Terminal UI (TUI) for interacting with APIs, querying studies, and exporting customized genomic datasets.
+A cbioportal CLI with a minimal Python stack that includes a rich, full-screen Terminal UI (TUI) for interacting with APIs, querying studies, and exporting customized genomic datasets.
 
 ## Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) for package management
-- A local clone of [cBioPortal/datahub](https://github.com/cBioPortal/datahub)
 - [Docker](https://www.docker.com/) (Optional, required for validating MAF exports)
 
 ## Setup
@@ -62,42 +58,45 @@ If you need to manually load data from the local datahub clone (bypassing the in
 
 ## Running the Web App
 
+The web application requires the `web` optional dependencies (FastAPI, uvicorn, etc.).
+
 ```bash
-uv run cbioportal serve
+# Install web extras first
+uv sync --extra web
+
+# Launch the server
+uv run cbio serve
 ```
 
 The server starts on `http://localhost:8000` by default.
 
 ## Testing
 
-### Unit tests (fast, no real data)
+### Core Tests (Fast, No Web Extras)
+
+These tests cover the TUI, API clients, and core DuckDB logic.
 
 ```bash
-uv run pytest tests/unit/ -v
+uv run pytest tests/unit/ tests/integration/ -v
 ```
 
-Uses in-memory DuckDB. No real study data needed. Covers repository functions,
-loader logic, and edge cases (NULLs, empty tables, missing columns).
+*Note: Use `--run-live-api` and `--run-docker` for full API and export validation.*
 
-### Integration / Golden tests
+### Web & Study View Tests
+
+These tests require the `[web]` optional dependencies (specifically `scipy` for genomic statistics).
 
 ```bash
-uv run pytest tests/test_study_view_charts.py -v
+uv run pytest tests/web/ -v
 ```
 
-Requires a real DuckDB with `msk_chord_2024` loaded. Compares chart data against
-JSON fixtures in `tests/fixtures/` captured from the public cBioPortal.
+### Golden Integration Tests
 
-### API & Export Validation Tests
-
-Testing the live API puller and MAF exports requires explicit authorization flags to prevent accidental rate-limiting or failures on systems without Docker.
+Compares Study View chart data against JSON fixtures from the public portal. Requires a real DuckDB with `msk_chord_2024` loaded.
 
 ```bash
-uv run pytest tests/integration/ -v --run-live-api --run-docker
+uv run pytest tests/web/test_study_view_charts.py -v
 ```
-
-- `--run-live-api`: Permits tests to hit the live cBioPortal and MoAlmanac APIs.
-- `--run-docker`: Spins up a Bioconductor container to rigorously validate exported MAF files using `R` and `maftools`.
 
 ## Institutional Knowledge
 

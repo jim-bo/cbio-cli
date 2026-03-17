@@ -33,17 +33,17 @@ def test_pull_mutations_brca_bccrc(tmp_path):
     assert len(rows) > 0
     # Check for expected columns
     expected_cols = {
-        "HUGO_SYMBOL", 
-        "CHROMOSOME", 
-        "START_POSITION", 
-        "END_POSITION", 
-        "VARIANT_CLASSIFICATION",
-        "VARIANT_TYPE",
-        "REFERENCE_ALLELE",
-        "TUMOR_SAMPLE_BARCODE",
-        "MUTATION_EFFECT",
-        "ONCOGENIC",
-        "MOALMANAC_ANNOTATION"
+        "Hugo_Symbol", 
+        "Chromosome", 
+        "Start_Position", 
+        "End_Position", 
+        "Variant_Classification",
+        "Variant_Type",
+        "Reference_Allele",
+        "Tumor_Sample_Barcode",
+        "Mutation_Effect",
+        "Oncogenic",
+        "MoAlmanac_Annotation"
     }
     assert expected_cols.issubset(set(reader.fieldnames))
     
