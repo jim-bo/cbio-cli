@@ -147,7 +147,7 @@ def load_study(
                     CAST(cna_value AS SIGNED) as cna_value
                 FROM (
                     UNPIVOT (SELECT * FROM read_csv('{cna_file}', delim='\t', header=True, ignore_errors=True, nullstr='NA'))
-                    ON COLUMNS(* EXCLUDE Hugo_Symbol)
+                    ON COLUMNS(* EXCLUDE (Hugo_Symbol, Entrez_Gene_Id))
                     INTO
                         NAME sample_id
                         VALUE cna_value
