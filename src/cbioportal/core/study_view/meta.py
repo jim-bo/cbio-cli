@@ -275,6 +275,27 @@ def get_charts_meta(conn, study_id: str) -> list[dict]:
             "priority": 70, "w": 4, "h": 10,
             "description": "Genes involved in structural variants (fusions, rearrangements) detected in the cohort.",
         })
+    if "treatment" in data_types:
+        try:
+            conn.execute(f'SELECT 1 FROM "{study_id}_timeline_treatment" LIMIT 1')
+            charts.append({
+                "attr_id": "_patient_treatments",
+                "display_name": "Treatment per Patient",
+                "chart_type": "_patient_treatments",
+                "patient_attribute": True,
+                "priority": 35, "w": 4, "h": 10,
+                "description": "Number of patients who received each treatment.",
+            })
+            charts.append({
+                "attr_id": "_sample_treatments",
+                "display_name": "Treatment per Sample (pre/post)",
+                "chart_type": "_sample_treatments",
+                "patient_attribute": False,
+                "priority": 30, "w": 4, "h": 10,
+                "description": "Number of samples collected before or after each treatment.",
+            })
+        except Exception:
+            pass
     if "mutation" in data_types and "cna" in data_types:
         charts.append({
             "attr_id": "_scatter", "display_name": "Mutation Count vs Fraction Genome Altered",

@@ -45,6 +45,8 @@ function filterTableData(attrId, items, query) {
         return items.filter(item => item.gene.toLowerCase().includes(q));
     if (attrId === '_data_types')
         return items.filter(item => item.display_name.toLowerCase().includes(q));
+    if (attrId === '_patient_treatments' || attrId === '_sample_treatments')
+        return items.filter(item => item.treatment.toLowerCase().includes(q));
     // Clinical 'table' widgets
     return items.filter(item => item.value.toLowerCase().includes(q));
 }
@@ -133,14 +135,38 @@ function renderDataTypesTbody(data) {
     });
 }
 
+function renderPatientTreatmentsTbody(data) {
+    const tbody = document.getElementById('table-body-_patient_treatments');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding-left:10px;">${item.treatment}</td><td style="text-align:right;">${item.count.toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderSampleTreatmentsTbody(data) {
+    const tbody = document.getElementById('table-body-_sample_treatments');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding-left:10px;">${item.treatment}</td><td style="text-align:center;">${item.time}</td><td style="text-align:right;">${item.count.toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
 function reRenderTableTbody(attrId) {
     const data = widgetData[attrId];
     if (!data) return;
     const filtered = filterTableData(attrId, data, tableSearchState[attrId]);
     if (attrId === '_mutated_genes') { renderGenomicTableTbody(filtered); return; }
     if (attrId === '_cna_genes')     { renderCNATableTbody(filtered);     return; }
-    if (attrId === '_sv_genes')      { renderSVTableTbody(filtered);      return; }
-    if (attrId === '_data_types')    { renderDataTypesTbody(filtered);    return; }
+    if (attrId === '_sv_genes')             { renderSVTableTbody(filtered);             return; }
+    if (attrId === '_data_types')           { renderDataTypesTbody(filtered);           return; }
+    if (attrId === '_patient_treatments')   { renderPatientTreatmentsTbody(filtered);   return; }
+    if (attrId === '_sample_treatments')    { renderSampleTreatmentsTbody(filtered);    return; }
     renderTableTbody(attrId, filtered);
 }
 
@@ -410,6 +436,38 @@ async function updateDataTypesWidget() {
     } catch (e) {}
 }
 
+async function updatePatientTreatmentsWidget() {
+    const tbody = document.getElementById('table-body-_patient_treatments');
+    if (!tbody) return;
+    try {
+        const formData = new FormData();
+        formData.append('study_id', DashboardState.studyId);
+        formData.append('filter_json', JSON.stringify(DashboardState.filters));
+        const response = await fetch('/study/summary/chart/patient-treatments?format=json', { method: 'POST', body: formData });
+        const json = await response.json();
+        const data = json.rows || [];
+        widgetData['_patient_treatments'] = data;
+        const filtered = filterTableData('_patient_treatments', data, tableSearchState['_patient_treatments']);
+        renderPatientTreatmentsTbody(filtered);
+    } catch (e) {}
+}
+
+async function updateSampleTreatmentsWidget() {
+    const tbody = document.getElementById('table-body-_sample_treatments');
+    if (!tbody) return;
+    try {
+        const formData = new FormData();
+        formData.append('study_id', DashboardState.studyId);
+        formData.append('filter_json', JSON.stringify(DashboardState.filters));
+        const response = await fetch('/study/summary/chart/sample-treatments?format=json', { method: 'POST', body: formData });
+        const json = await response.json();
+        const data = json.rows || [];
+        widgetData['_sample_treatments'] = data;
+        const filtered = filterTableData('_sample_treatments', data, tableSearchState['_sample_treatments']);
+        renderSampleTreatmentsTbody(filtered);
+    } catch (e) {}
+}
+
 async function updateKMWidget() {
     const chartDom = document.getElementById('chart-_km');
     if (!chartDom) return;
@@ -469,9 +527,11 @@ function routeUpdateWidget(chart) {
         case '_mutated_genes':  return updateGenomicTableWidget();
         case '_cna_genes':      return updateCNATableWidget();
         case '_sv_genes':       return updateSVTableWidget();
-        case '_scatter':        return updateScatterWidget();
-        case '_km':             return updateKMWidget();
-        case '_data_types':     return updateDataTypesWidget();
+        case '_scatter':             return updateScatterWidget();
+        case '_km':                  return updateKMWidget();
+        case '_data_types':          return updateDataTypesWidget();
+        case '_patient_treatments':  return updatePatientTreatmentsWidget();
+        case '_sample_treatments':   return updateSampleTreatmentsWidget();
     }
 }
 
@@ -655,6 +715,49 @@ function buildWidgetHTML(chart) {
                             <th style="text-align:right;">Freq <i class="fa fa-caret-down"></i></th>
                         </tr></thead>
                         <tbody id="table-body-_data_types"></tbody>
+                    </table>
+                </div>
+                <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                <div class="cbio-resize-handle"></div>
+            </div>`;
+    }
+
+    if (chart_type === '_patient_treatments') {
+        return `
+            <div class="cbio-widget" id="widget-_patient_treatments" ${dataAttrs} data-view-mode="_patient_treatments">
+                <div class="cbio-widget-header">
+                    <div class="cbio-widget-title" id="title-_patient_treatments">Treatment per Patient</div>
+                    ${controls()}
+                </div>
+                <div class="cbio-widget-content">
+                    <table class="cbio-table">
+                        <thead><tr>
+                            <th style="text-align:left;padding-left:10px;">Treatment</th>
+                            <th style="text-align:right;"># Patients</th>
+                        </tr></thead>
+                        <tbody id="table-body-_patient_treatments"></tbody>
+                    </table>
+                </div>
+                <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                <div class="cbio-resize-handle"></div>
+            </div>`;
+    }
+
+    if (chart_type === '_sample_treatments') {
+        return `
+            <div class="cbio-widget" id="widget-_sample_treatments" ${dataAttrs} data-view-mode="_sample_treatments">
+                <div class="cbio-widget-header">
+                    <div class="cbio-widget-title" id="title-_sample_treatments">Treatment per Sample (pre/post)</div>
+                    ${controls()}
+                </div>
+                <div class="cbio-widget-content">
+                    <table class="cbio-table">
+                        <thead><tr>
+                            <th style="text-align:left;padding-left:10px;">Treatment</th>
+                            <th style="text-align:center;">Pre/Post</th>
+                            <th style="text-align:right;"># Samples</th>
+                        </tr></thead>
+                        <tbody id="table-body-_sample_treatments"></tbody>
                     </table>
                 </div>
                 <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>

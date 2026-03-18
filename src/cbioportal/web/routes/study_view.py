@@ -18,6 +18,8 @@ from cbioportal.core.study_view_repository import (
     get_clinical_attributes,
     get_charts_meta,
     get_data_types_chart,
+    get_patient_treatment_counts,
+    get_sample_treatment_counts,
 )
 from cbioportal.web.schemas import (
     DashboardFilters,
@@ -290,3 +292,33 @@ async def chart_data_types(
     _parse_filters(filter_json)
     conn = request.app.state.db_conn
     return get_data_types_chart(conn, study_id, filter_json)
+
+
+@router.post("/study/summary/chart/patient-treatments")
+async def chart_patient_treatments(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
+):
+    """Return distinct patient counts per treatment agent."""
+    _parse_filters(filter_json)
+    conn = request.app.state.db_conn
+    from fastapi.responses import JSONResponse
+    data = get_patient_treatment_counts(conn, study_id, filter_json)
+    return JSONResponse({"rows": data})
+
+
+@router.post("/study/summary/chart/sample-treatments")
+async def chart_sample_treatments(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    filter_json: Annotated[str, Form()] = "{}",
+    format: str | None = None,
+):
+    """Return sample counts by treatment agent and pre/post timing."""
+    _parse_filters(filter_json)
+    conn = request.app.state.db_conn
+    from fastapi.responses import JSONResponse
+    data = get_sample_treatment_counts(conn, study_id, filter_json)
+    return JSONResponse({"rows": data})

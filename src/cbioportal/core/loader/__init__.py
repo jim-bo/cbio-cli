@@ -165,6 +165,14 @@ def load_study(
                 conn.execute(f"DROP TABLE IF EXISTS {table_name}")
                 conn.execute(f"CREATE TABLE {table_name} AS SELECT '{raw_study_id}' as study_id, * FROM read_csv('{timeline_file}', delim='\t', header=True, comment='#', null_padding=True, ignore_errors=True)")
             loaded_any = True
+        # Always load treatment and specimen timeline files if present (needed for treatment charts)
+        for timeline_name in ("treatment", "specimen"):
+            tfile = study_path / f"data_timeline_{timeline_name}.txt"
+            if tfile.exists() and not (load_timeline and tfile in timeline_files):
+                table_name = f'"{raw_study_id}_timeline_{timeline_name}"'
+                conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                conn.execute(f"CREATE TABLE {table_name} AS SELECT '{raw_study_id}' as study_id, * FROM read_csv('{tfile}', delim='\t', header=True, comment='#', null_padding=True, ignore_errors=True)")
+                loaded_any = True
         if gene_panel_file.exists():
             table_name = f'"{raw_study_id}_gene_panel"'
             conn.execute(f"DROP TABLE IF EXISTS {table_name}")

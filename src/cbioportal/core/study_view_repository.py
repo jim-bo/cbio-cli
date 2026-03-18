@@ -22,6 +22,8 @@ from cbioportal.core.study_view import (  # noqa: F401
     get_km_data,
     compute_km_curve,
     get_tmb_fga_scatter,
+    get_patient_treatment_counts,
+    get_sample_treatment_counts,
     get_study_metadata,
     get_charts_meta,
     get_data_types_chart,
