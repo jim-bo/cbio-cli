@@ -227,3 +227,35 @@ async def handle_config(state, app) -> None:
 
     state.selector_callback = on_setting_selected
     app.invalidate()
+
+
+async def handle_sync(state, app, args: list[str] | None = None) -> None:
+    """Fetch studies + clinical data from cBioPortal and store in cache DB."""
+    from cbioportal.core.syncer import sync_all
+
+    study_ids = args if args else None
+    label = f"Syncing {study_ids[0]}…" if study_ids and len(study_ids) == 1 else "Syncing studies…"
+
+    state.is_thinking = True
+    state.spinner_control.start(app, label)
+    app.invalidate()
+
+    def on_progress(msg: str) -> None:
+        state.spinner_control.set_label(msg)
+        app.invalidate()
+
+    try:
+        stats = await sync_all(on_progress, study_ids=study_ids)
+        synced = stats.get("synced", stats["studies"])
+        skipped = stats.get("skipped", 0)
+        rows = stats["clinical_rows"]
+        parts = [f"✓ Synced {synced} studies · {rows:,} clinical rows"]
+        if skipped:
+            parts.append(f"({skipped} already cached)")
+        state.history.add(HistoryEntry(MessageKind.COMMAND_RESPONSE, "  ".join(parts)))
+    except Exception as exc:
+        state.history.add(HistoryEntry(MessageKind.NOTIFICATION, f"Sync failed: {exc}"))
+    finally:
+        state.spinner_control.stop()
+        state.is_thinking = False
+        app.invalidate()
