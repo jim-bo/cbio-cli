@@ -198,7 +198,7 @@ def load_study(
         return loaded_any
     except Exception as e:
         typer.echo(f"Error loading {raw_study_id}: {e}")
-        return False
+        raise
     finally:
         data_types = []
         if (study_path / "data_mutations.txt").exists() or list(study_path.glob("data_mutations_*.txt")):
