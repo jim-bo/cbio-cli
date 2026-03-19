@@ -242,6 +242,8 @@ async function updatePieWidget(attrId) {
             }]
         });
         chart.off('click'); chart.on('click', (p) => toggleFilter(attrId, p.name));
+        chart.off('mouseover'); chart.on('mouseover', (p) => showPieHoverTable(attrId, p.name));
+        chart.off('mouseout'); chart.on('mouseout', () => schedulePieHoverTableHide());
     } catch (err) {}
 }
 
@@ -1063,6 +1065,100 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }
     });
+
+    // Pie chart hover table popup
+    (() => {
+        const popup = document.getElementById('cbio-pie-hover-table');
+        let hideTimer = null;
+
+        function cancelHide() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
+
+        popup.addEventListener('mouseenter', cancelHide);
+        popup.addEventListener('mouseleave', () => { hideTimer = setTimeout(() => { popup.style.display = 'none'; }, 150); });
+
+        popup.querySelector('.pht-search').addEventListener('input', function() {
+            const q = this.value.toLowerCase();
+            popup.querySelectorAll('.pht-row').forEach(row => {
+                row.style.display = row.dataset.label.toLowerCase().includes(q) ? '' : 'none';
+            });
+        });
+
+        popup.querySelector('.pht-select-all-btn').addEventListener('click', () => {
+            const attrId = popup.dataset.attrId;
+            if (!attrId) return;
+            const data = widgetData[attrId] || [];
+            const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+            const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+            if (selectedValues.length === data.length) {
+                // Deselect all — remove filter
+                DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId);
+            } else {
+                // Select all
+                DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId);
+                DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: data.map(d => ({ value: d.value })) });
+            }
+            document.dispatchEvent(new CustomEvent('cbio-filter-changed'));
+        });
+
+        window.showPieHoverTable = function(attrId, hoveredName) {
+            cancelHide();
+            const data = widgetData[attrId];
+            if (!data || data.length === 0) return;
+            const widget = document.getElementById(`widget-${attrId}`);
+            if (!widget) return;
+            const rect = widget.getBoundingClientRect();
+
+            const meta = (DashboardState.chartsMeta || []).find(c => c.attr_id === attrId);
+            popup.querySelector('.pht-title').textContent = meta ? meta.display_name : attrId;
+            popup.dataset.attrId = attrId;
+
+            const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+            const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+
+            popup.querySelector('.pht-rows').innerHTML = data.map(item => {
+                const pct = typeof item.pct === 'number' ? item.pct.toFixed(1) + '%' : item.pct;
+                const checked = selectedValues.includes(item.value) ? 'checked' : '';
+                const hovered = item.value === hoveredName ? ' pht-row-hovered' : '';
+                return `<div class="pht-row${hovered}" data-label="${item.value.replace(/"/g,'&quot;')}" data-attr="${attrId}" data-value="${item.value.replace(/"/g,'&quot;')}">
+                    <span class="pht-swatch" style="background:${item.color}"></span>
+                    <span class="pht-label" title="${item.value}">${item.value}</span>
+                    <input type="checkbox" class="pht-checkbox" ${checked}>
+                    <span class="pht-count">${item.count.toLocaleString()}</span>
+                    <span class="pht-pct">${pct}</span>
+                </div>`;
+            }).join('');
+
+            // Wire row checkboxes
+            popup.querySelectorAll('.pht-row').forEach(row => {
+                row.addEventListener('click', (e) => {
+                    if (e.target.type === 'checkbox') return; // handled below
+                    toggleFilter(row.dataset.attr, row.dataset.value);
+                });
+                row.querySelector('.pht-checkbox').addEventListener('change', () => {
+                    toggleFilter(row.dataset.attr, row.dataset.value);
+                });
+            });
+
+            // Position: right of widget, fallback to left
+            popup.style.display = 'block';
+            const pw = popup.offsetWidth;
+            const ph = popup.offsetHeight;
+            let left = rect.right + 8;
+            if (left + pw > window.innerWidth - 8) left = rect.left - pw - 8;
+            let top = rect.top;
+            if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+            popup.style.left = Math.max(8, left) + 'px';
+            popup.style.top = Math.max(8, top) + 'px';
+
+            // Reset search
+            popup.querySelector('.pht-search').value = '';
+            popup.querySelectorAll('.pht-row').forEach(r => r.style.display = '');
+        };
+
+        window.schedulePieHoverTableHide = function() {
+            hideTimer = setTimeout(() => { popup.style.display = 'none'; }, 150);
+        };
+    })();
 
     // Delegated click handler for widget header buttons and menu items
     document.addEventListener('click', e => {
