@@ -231,7 +231,7 @@ async function updatePieWidget(attrId) {
         const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
         const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
         chart.setOption({
-            tooltip: { trigger: 'item', formatter: '{b}: {c}' },
+            tooltip: { show: false },
             series: [{
                 type: 'pie', radius: '70%', center: ['50%', '50%'],
                 data: data.map(item => ({
