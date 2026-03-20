@@ -9,6 +9,9 @@ from cbioportal.core.oncoprint_repository import (
     get_oncoprint_data,
     get_clinical_track_options,
     get_clinical_track_data,
+    get_lollipop_data,
+    get_mutation_summary,
+    get_mutations_table,
 )
 
 router = APIRouter()
@@ -54,10 +57,12 @@ async def oncoprint_page(
     gene_list: str = "",
     case_set_id: str = "",
     profileFilter: str = "",
+    tab: str = "oncoprint",
 ):
-    """Render the OncoPrint results page."""
+    """Render the Results View page (OncoPrint + Mutations tabs)."""
     study_id = cancer_study_list.split(",")[0].strip() if cancer_study_list else ""
-    gene = gene_list.split()[0].strip() if gene_list else ""
+    # Support space- or %20-separated gene list; keep all genes for multi-gene OncoPrint
+    genes = [g.strip() for g in gene_list.replace(",", " ").split() if g.strip()]
 
     conn = request.app.state.db_conn
     meta = _get_study_meta(conn, study_id) if study_id else {}
@@ -67,8 +72,10 @@ async def oncoprint_page(
         {
             "request": request,
             "study_id": study_id,
-            "gene": gene,
+            "genes": genes,
+            "gene": genes[0] if genes else "",   # first gene (for Mutations tab default)
             "meta": meta,
+            "active_tab": tab,
         },
     )
 
@@ -106,4 +113,46 @@ async def oncoprint_clinical_data(
     conn = request.app.state.db_conn
     ids = [a.strip() for a in attr_ids.split(",") if a.strip()]
     data = get_clinical_track_data(conn, study_id, ids)
+    return JSONResponse(data)
+
+
+# ── Mutations Tab ─────────────────────────────────────────────────────────────
+
+@router.post("/results/oncoprint/lollipop")
+async def mutations_lollipop(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    gene: Annotated[str, Form()],
+):
+    """Return lollipop plot data: aggregated positions + protein length."""
+    conn = request.app.state.db_conn
+    data = get_lollipop_data(conn, study_id, gene)
+    return JSONResponse(data)
+
+
+@router.post("/results/oncoprint/mutation-summary")
+async def mutations_summary(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    gene: Annotated[str, Form()],
+):
+    """Return per-type mutation summary for the right panel."""
+    conn = request.app.state.db_conn
+    data = get_mutation_summary(conn, study_id, gene)
+    return JSONResponse(data)
+
+
+@router.post("/results/oncoprint/mutations-table")
+async def mutations_table_data(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    gene: Annotated[str, Form()],
+    page: Annotated[int, Form()] = 1,
+    page_size: Annotated[int, Form()] = 25,
+    sort_col: Annotated[str, Form()] = "Protein_position",
+    sort_dir: Annotated[str, Form()] = "ASC",
+):
+    """Return paginated mutation rows for the mutations table."""
+    conn = request.app.state.db_conn
+    data = get_mutations_table(conn, study_id, gene, page, page_size, sort_col, sort_dir)
     return JSONResponse(data)

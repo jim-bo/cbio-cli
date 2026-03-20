@@ -1,5 +1,7 @@
-"""OncoPrint data queries — mutations, CNA, SV, clinical tracks."""
+"""OncoPrint + Results View data queries — mutations, CNA, SV, clinical tracks, lollipop."""
 from __future__ import annotations
+
+import re
 
 # Mutation type → simplified display type (mirrors DataUtils.ts getSimplifiedMutationType)
 _VARIANT_TO_DISP = {
@@ -332,3 +334,442 @@ def get_clinical_track_data(conn, study_id: str, attr_ids: list[str]) -> dict[st
             pass
 
     return result
+
+
+# ── Mutations Tab ─────────────────────────────────────────────────────────────
+
+# Variant classifications that are drivers by convention (truncating + hotspot missense)
+# Per cBioPortal: putative driver = OncoKB/hotspot annotated; fallback = truncating
+_TRUNC_VCS = {
+    "Nonsense_Mutation", "Frame_Shift_Del", "Frame_Shift_Ins",
+    "Stop_Codon_Del", "Stop_Codon_Ins", "Nonstop_Mutation",
+    "Splice_Site", "Splice_Region",
+}
+
+
+def _parse_hgvsp_position(hgvsp_short: str | None) -> int | None:
+    """Extract residue number from p.G12D → 12, p.R175H → 175, p.E294* → 294."""
+    if not hgvsp_short:
+        return None
+    m = re.search(r"[A-Za-z*]+(\d+)", hgvsp_short.replace("p.", ""))
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def get_lollipop_data(conn, study_id: str, gene: str) -> dict:
+    """Aggregate mutation positions for the lollipop plot.
+
+    Returns:
+        {
+            "mutations": [{"position": int, "count": int, "mut_type": str,
+                           "hgvsp_short": str, "hotspot": bool}],
+            "protein_length": int | None,
+            "total_mutations": int,
+            "total_samples": int,
+        }
+    """
+    result = {
+        "mutations": [],
+        "protein_length": None,
+        "total_mutations": 0,
+        "total_samples": 0,
+    }
+    try:
+        conn.execute(f'SELECT 1 FROM "{study_id}_mutations" LIMIT 1')
+    except Exception:
+        return result
+
+    # ── Count total samples and mutations for this gene ──────────────────────
+    try:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*), COUNT(DISTINCT "Tumor_Sample_Barcode")
+            FROM "{study_id}_mutations"
+            WHERE "Hugo_Symbol" = ?
+              AND ("Mutation_Status" IS NULL OR UPPER("Mutation_Status") != 'UNCALLED')
+            """,
+            [gene],
+        ).fetchone()
+        result["total_mutations"] = row[0] if row else 0
+        result["total_samples"] = row[1] if row else 0
+    except Exception:
+        pass
+
+    # ── Aggregate by HGVSp_Short + position ─────────────────────────────────
+    try:
+        # Use Protein_position when available; fall back to parsing HGVSp_Short
+        has_pp = False
+        try:
+            conn.execute(
+                f'SELECT "Protein_position" FROM "{study_id}_mutations" LIMIT 1'
+            )
+            has_pp = True
+        except Exception:
+            pass
+
+        if has_pp:
+            rows = conn.execute(
+                f"""
+                SELECT "HGVSp_Short",
+                       CAST("Protein_position" AS INTEGER) AS pos,
+                       "Variant_Classification",
+                       COUNT(*) AS cnt,
+                       COUNT(DISTINCT "Tumor_Sample_Barcode") AS sample_cnt
+                FROM "{study_id}_mutations"
+                WHERE "Hugo_Symbol" = ?
+                  AND "Protein_position" IS NOT NULL
+                  AND ("Mutation_Status" IS NULL OR UPPER("Mutation_Status") != 'UNCALLED')
+                GROUP BY 1, 2, 3
+                ORDER BY cnt DESC
+                """,
+                [gene],
+            ).fetchall()
+        else:
+            # fall back – positions will be None (plot degrades to table-only)
+            rows = []
+    except Exception:
+        rows = []
+
+    # ── Check variant_annotations for hotspot data ───────────────────────────
+    hotspot_positions: set[int] = set()
+    try:
+        ha_table = f"{study_id}_variant_annotations"
+        hs_rows = conn.execute(
+            f"""
+            SELECT DISTINCT CAST("Protein_position" AS INTEGER)
+            FROM "{study_id}_mutations" m
+            JOIN "{ha_table}" va
+              ON va.hugo_symbol = m."Hugo_Symbol"
+             AND va.hgvsp_short = m."HGVSp_Short"
+             AND va.sample_id = m."Tumor_Sample_Barcode"
+            WHERE m."Hugo_Symbol" = ?
+              AND va.hotspot_type IS NOT NULL
+              AND m."Protein_position" IS NOT NULL
+            """,
+            [gene],
+        ).fetchall()
+        hotspot_positions = {r[0] for r in hs_rows if r[0] is not None}
+    except Exception:
+        pass
+
+    # ── Protein length ────────────────────────────────────────────────────────
+    if rows:
+        max_pos = max((r[1] for r in rows if r[1] is not None), default=None)
+        if max_pos is not None:
+            result["protein_length"] = max_pos  # lower bound; caller fetches pfam
+
+    # ── Build lollipop points ─────────────────────────────────────────────────
+    mut_points = []
+    for hgvsp, pos, vc, cnt, sample_cnt in rows:
+        if pos is None:
+            continue
+        mut_type = _VARIANT_TO_DISP.get(vc or "", "other")
+        mut_points.append({
+            "position": pos,
+            "count": sample_cnt,      # number of patients (samples)
+            "mut_count": cnt,         # total mutation calls at this position
+            "mut_type": mut_type,
+            "hgvsp_short": hgvsp or "",
+            "hotspot": pos in hotspot_positions,
+        })
+
+    result["mutations"] = mut_points
+    return result
+
+
+def get_mutation_summary(conn, study_id: str, gene: str) -> dict:
+    """Return per-type mutation count summary for the right-side panel.
+
+    Returns:
+        {
+            "total_mutations": int,
+            "mutated_samples": int,
+            "total_samples": int,
+            "by_type": {"missense": {"driver": N, "vus": N}, ...},
+            "has_annotations": bool,
+        }
+    """
+    summary: dict = {
+        "total_mutations": 0,
+        "mutated_samples": 0,
+        "total_samples": 0,
+        "by_type": {},
+        "has_annotations": False,
+    }
+    try:
+        conn.execute(f'SELECT 1 FROM "{study_id}_mutations" LIMIT 1')
+    except Exception:
+        return summary
+
+    # Total samples in study
+    try:
+        summary["total_samples"] = conn.execute(
+            f'SELECT COUNT(*) FROM "{study_id}_sample"'
+        ).fetchone()[0]
+    except Exception:
+        pass
+
+    # Mutations for this gene
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT "Variant_Classification", COUNT(*) AS cnt,
+                   COUNT(DISTINCT "Tumor_Sample_Barcode") AS sample_cnt
+            FROM "{study_id}_mutations"
+            WHERE "Hugo_Symbol" = ?
+              AND ("Mutation_Status" IS NULL OR UPPER("Mutation_Status") != 'UNCALLED')
+            GROUP BY 1
+            """,
+            [gene],
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    total_mut = 0
+    mutated_samples_by_vc: dict[str, int] = {}
+    vc_counts: dict[str, dict] = {}
+    for vc, cnt, sample_cnt in rows:
+        disp = _VARIANT_TO_DISP.get(vc or "", "other")
+        if disp not in vc_counts:
+            vc_counts[disp] = {"driver": 0, "vus": 0}
+        # Simple driver rule: truncating = always driver; others = VUS until annotated
+        if (vc or "") in _TRUNC_VCS:
+            vc_counts[disp]["driver"] += cnt
+        else:
+            vc_counts[disp]["vus"] += cnt
+        total_mut += cnt
+        mutated_samples_by_vc[disp] = mutated_samples_by_vc.get(disp, 0) + sample_cnt
+
+    # Upgrade missense/splice to driver if hotspot_type is set in annotations
+    has_annotations = False
+    try:
+        ann_table = f"{study_id}_variant_annotations"
+        ann_rows = conn.execute(
+            f"""
+            SELECT va."Variant_Classification", COUNT(*) AS n
+            FROM "{study_id}_mutations" m
+            JOIN "{ann_table}" va
+              ON va.hugo_symbol = m."Hugo_Symbol"
+             AND va.hgvsp_short = m."HGVSp_Short"
+             AND va.sample_id = m."Tumor_Sample_Barcode"
+            WHERE m."Hugo_Symbol" = ?
+              AND va.hotspot_type IS NOT NULL
+            GROUP BY 1
+            """,
+            [gene],
+        ).fetchall()
+        has_annotations = True
+        for vc, n in ann_rows:
+            disp = _VARIANT_TO_DISP.get(vc or "", "other")
+            if disp in vc_counts:
+                upgrade = min(n, vc_counts[disp]["vus"])
+                vc_counts[disp]["vus"] -= upgrade
+                vc_counts[disp]["driver"] += upgrade
+    except Exception:
+        pass
+
+    summary["total_mutations"] = total_mut
+    summary["mutated_samples"] = sum(mutated_samples_by_vc.values())
+    summary["by_type"] = vc_counts
+    summary["has_annotations"] = has_annotations
+    return summary
+
+
+_ALLOWED_SORT_COLS = {
+    "HGVSp_Short", "Variant_Classification", "Tumor_Sample_Barcode",
+    "t_alt_count", "t_depth", "Protein_position",
+}
+
+
+def get_mutations_table(
+    conn,
+    study_id: str,
+    gene: str,
+    page: int = 1,
+    page_size: int = 25,
+    sort_col: str = "Protein_position",
+    sort_dir: str = "ASC",
+) -> dict:
+    """Return paginated mutations for the mutation table.
+
+    Returns:
+        {
+            "total": int,
+            "page": int,
+            "page_size": int,
+            "rows": [{sample_id, cancer_type, hgvsp_short, mutation_type,
+                      allele_freq, mut_count, annotation, ...}]
+        }
+    """
+    if sort_col not in _ALLOWED_SORT_COLS:
+        sort_col = "Protein_position"
+    if sort_dir.upper() not in ("ASC", "DESC"):
+        sort_dir = "ASC"
+
+    out: dict = {"total": 0, "page": page, "page_size": page_size, "rows": []}
+
+    try:
+        conn.execute(f'SELECT 1 FROM "{study_id}_mutations" LIMIT 1')
+    except Exception:
+        return out
+
+    # Total count
+    try:
+        total = conn.execute(
+            f"""
+            SELECT COUNT(*) FROM "{study_id}_mutations"
+            WHERE "Hugo_Symbol" = ?
+              AND ("Mutation_Status" IS NULL OR UPPER("Mutation_Status") != 'UNCALLED')
+            """,
+            [gene],
+        ).fetchone()[0]
+        out["total"] = total
+    except Exception:
+        return out
+
+    offset = (page - 1) * page_size
+
+    # Check which optional columns exist
+    try:
+        mut_cols = {c[0] for c in conn.execute(f'DESCRIBE "{study_id}_mutations"').fetchall()}
+    except Exception:
+        return out
+
+    t_alt = '"t_alt_count"' if "t_alt_count" in mut_cols else "NULL"
+    t_dep = '"t_depth"' if "t_depth" in mut_cols else "NULL"
+    ncbi_b = '"NCBI_Build"' if "NCBI_Build" in mut_cols else "NULL"
+    prot_p = '"Protein_position"' if "Protein_position" in mut_cols else "NULL"
+
+    # Check for sample clinical data (cancer type)
+    has_sample_table = False
+    try:
+        conn.execute(f'SELECT 1 FROM "{study_id}_sample" LIMIT 1')
+        has_sample_table = True
+    except Exception:
+        pass
+
+    cancer_type_col = ""
+    join_clause = ""
+    if has_sample_table:
+        try:
+            samp_cols = {c[0] for c in conn.execute(
+                f'DESCRIBE "{study_id}_sample"'
+            ).fetchall()}
+            if "CANCER_TYPE_DETAILED" in samp_cols:
+                cancer_type_col = ', s."CANCER_TYPE_DETAILED" AS cancer_type'
+                join_clause = (
+                    f'LEFT JOIN "{study_id}_sample" s '
+                    f'ON s."SAMPLE_ID" = m."Tumor_Sample_Barcode"'
+                )
+            elif "CANCER_TYPE" in samp_cols:
+                cancer_type_col = ', s."CANCER_TYPE" AS cancer_type'
+                join_clause = (
+                    f'LEFT JOIN "{study_id}_sample" s '
+                    f'ON s."SAMPLE_ID" = m."Tumor_Sample_Barcode"'
+                )
+        except Exception:
+            pass
+
+    # Check for annotation table
+    has_annotations = False
+    try:
+        conn.execute(
+            f'SELECT 1 FROM "{study_id}_variant_annotations" LIMIT 1'
+        )
+        has_annotations = True
+    except Exception:
+        pass
+
+    ann_cols = ""
+    ann_join = ""
+    if has_annotations:
+        ann_cols = (
+            ", va.hotspot_type, va.moalmanac_drug, va.civic_evidence_id, "
+            "va.mutation_effect, va.moalmanac_clinical_significance"
+        )
+        ann_join = (
+            f'LEFT JOIN "{study_id}_variant_annotations" va '
+            f'ON va.hugo_symbol = m."Hugo_Symbol" '
+            f'AND va.hgvsp_short = m."HGVSp_Short" '
+            f'AND va.sample_id = m."Tumor_Sample_Barcode" '
+            f'AND va.alteration_type = \'MUTATION\''
+        )
+
+    # Count mutations per sample (for # Mut in Sample column)
+    mut_count_cte = f"""
+        WITH mut_per_sample AS (
+            SELECT "Tumor_Sample_Barcode", COUNT(*) AS mut_count
+            FROM "{study_id}_mutations"
+            WHERE "Mutation_Status" IS NULL OR UPPER("Mutation_Status") != 'UNCALLED'
+            GROUP BY 1
+        )
+    """
+
+    sql = f"""
+        {mut_count_cte}
+        SELECT
+            m."Tumor_Sample_Barcode"   AS sample_id,
+            m."HGVSp_Short"            AS hgvsp_short,
+            m."Variant_Classification" AS mutation_type,
+            {prot_p}                   AS protein_position,
+            {t_alt}                    AS t_alt_count,
+            {t_dep}                    AS t_depth,
+            {ncbi_b}                   AS ncbi_build,
+            mps.mut_count              AS mut_count
+            {cancer_type_col}
+            {ann_cols}
+        FROM "{study_id}_mutations" m
+        LEFT JOIN mut_per_sample mps ON mps."Tumor_Sample_Barcode" = m."Tumor_Sample_Barcode"
+        {join_clause}
+        {ann_join}
+        WHERE m."Hugo_Symbol" = ?
+          AND (m."Mutation_Status" IS NULL OR UPPER(m."Mutation_Status") != 'UNCALLED')
+        ORDER BY m."{sort_col}" {sort_dir} NULLS LAST
+        LIMIT ? OFFSET ?
+    """
+    try:
+        rows = conn.execute(sql, [gene, page_size, offset]).fetchall()
+    except Exception:
+        return out
+
+    result_rows = []
+    for row in rows:
+        (sample_id, hgvsp, mut_type, prot_pos,
+         t_alt_v, t_dep_v, ncbi_build, mut_count_v) = row[:8]
+        idx = 8
+        cancer_type = None
+        if cancer_type_col:
+            cancer_type = row[idx]
+            idx += 1
+
+        hotspot_type = drug = civic_id = mutation_effect = clin_sig = None
+        if has_annotations:
+            hotspot_type = row[idx]
+            drug = row[idx + 1]
+            civic_id = row[idx + 2]
+            mutation_effect = row[idx + 3]
+            clin_sig = row[idx + 4]
+
+        # Allele frequency
+        allele_freq = None
+        if t_alt_v is not None and t_dep_v is not None and t_dep_v > 0:
+            allele_freq = round(t_alt_v / t_dep_v, 3)
+
+        result_rows.append({
+            "sample_id": sample_id,
+            "cancer_type": cancer_type,
+            "hgvsp_short": hgvsp,
+            "mutation_type": mut_type,
+            "protein_position": prot_pos,
+            "allele_freq": allele_freq,
+            "mut_count": mut_count_v,
+            "hotspot_type": hotspot_type,
+            "moalmanac_drug": drug,
+            "civic_evidence_id": civic_id,
+            "mutation_effect": mutation_effect,
+            "moalmanac_clinical_significance": clin_sig,
+        })
+
+    out["rows"] = result_rows
+    return out
