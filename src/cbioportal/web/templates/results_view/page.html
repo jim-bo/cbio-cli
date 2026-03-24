@@ -212,7 +212,7 @@
 }
 #cts-sidebar .slider-row .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: #999; }
 
-#cts-chart-area { flex: 1; padding: 12px 16px; position: relative; }
+#cts-chart-area { flex: 1; padding: 12px 16px; position: relative; overflow-x: auto; }
 #cts-gene-tabs { margin-bottom: 8px; }
 #cts-gene-tabs .cts-gene-btn {
     display: inline-block; padding: 4px 12px;
@@ -222,7 +222,7 @@
     background: #f5f5f5; color: #333;
 }
 #cts-gene-tabs .cts-gene-btn.active { background: #2374c8; color: #fff; border-color: #2374c8; }
-#cts-chart-container { width: 100%; height: 600px; }
+#cts-chart-container { height: 600px; }
 
 /* profiling status grid */
 #cts-profiling { margin-top: 4px; font-size: 11px; }
@@ -1766,6 +1766,7 @@ function renderCtsChart() {
         name: ALTERATION_LABELS[type],
         type: 'bar',
         stack: 'total',
+        barWidth: 20,
         data: cats.map(c => {
             var val = c[type] || 0;
             if (yAxis === "alt-freq") {
@@ -1777,9 +1778,21 @@ function renderCtsChart() {
         emphasis: { focus: 'series' },
     }));
 
+    // Size container to match category count (legacy: barWidth=20 + barSeparation=8 = 28px/bar)
+    var chartW = Math.max(300, catNames.length * 28 + 190);  // 150 left + 40 right padding
+    var container = document.getElementById("cts-chart-container");
+    container.style.width = chartW + "px";
+
     if (!ctsChart) {
-        ctsChart = echarts.init(document.getElementById("cts-chart-container"));
-        window.addEventListener("resize", () => ctsChart && ctsChart.resize());
+        ctsChart = echarts.init(container);
+        window.addEventListener("resize", () => {
+            if (!ctsChart) return;
+            var newW = Math.max(300, catNames.length * 28 + 190);
+            container.style.width = newW + "px";
+            ctsChart.resize({width: newW});
+        });
+    } else {
+        ctsChart.resize({width: chartW});
     }
 
     // Build profiling scatter data (✚ marks below bars)
