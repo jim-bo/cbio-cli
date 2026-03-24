@@ -60,16 +60,45 @@
 /* toolbar */
 #oncoprint-toolbar {
     background: #fff;
-    border-bottom: 1px solid #e0e0e0;
-    padding: 6px 16px;
+    border-bottom: 1px solid #e8e8e8;
+    padding: 4px 8px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-wrap: wrap;
 }
-#oncoprint-toolbar .btn { font-size: 12px; }
-#oncoprint-toolbar .zoom-label { font-size: 12px; color: #666; margin-left: 8px; }
-#zoom-slider { width: 120px; vertical-align: middle; }
+#oncoprint-toolbar .btn {
+    font-size: 12px;
+    padding: 3px 8px;
+    height: 26px;
+    line-height: 20px;
+}
+#oncoprint-toolbar .btn-group { margin-right: 2px; }
+
+/* zoom controls */
+.zoom-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 4px;
+}
+#zoom-slider {
+    -webkit-appearance: none;
+    width: 110px;
+    height: 4px;
+    border-radius: 2px;
+    background: #ccc;
+    outline: none;
+    cursor: pointer;
+}
+#zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #5cb85c;
+    cursor: pointer;
+}
+#zoom-pct { font-size: 12px; color: #333; min-width: 36px; text-align: right; }
 
 /* tracks dropdown panel */
 #tracks-panel {
@@ -102,24 +131,47 @@
 #oncoprint-container {
     width: 100%;
     min-height: 200px;
-    overflow: hidden;
+    overflow-x: auto;
     position: relative;
+    padding: 8px 4px;
 }
 #oncoprint-loading { padding: 40px; text-align: center; color: #888; font-size: 14px; }
 #oncoprint-error { padding: 20px; color: #c62828; font-size: 13px; display: none; }
 
-/* legend */
-#oncoprint-legend {
-    padding: 12px 16px;
-    border-top: 1px solid #eee;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    font-size: 12px;
-    color: #333;
+/* oncoprintjs hover-reveal track options (from cBioPortal oncoprintStyles.scss) */
+#oncoprint-container .oncoprintjs__track_options__toggle_btn_img,
+#oncoprint-container .oncoprintjs__header__toggle_btn_img {
+    opacity: 0;
+    border-width: 0 !important;
+    position: relative;
 }
-.legend-item { display: flex; align-items: center; gap: 5px; }
-.legend-swatch { width: 14px; height: 14px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+#oncoprint-container:hover .oncoprintjs__track_options__toggle_btn_img,
+#oncoprint-container:hover .oncoprintjs__header__toggle_btn_img {
+    opacity: 1;
+}
+#oncoprint-container .oncoprintjs__track_options__dropdown,
+#oncoprint-container .oncoprintjs__header__dropdown {
+    border: 1px solid rgba(0,0,0,.15) !important;
+    margin: 0 !important; padding: 0 !important;
+    box-shadow: 0 6px 12px rgba(0,0,0,.175);
+    border-radius: 3px;
+    z-index: 10000;
+}
+#oncoprint-container .oncoprintjs__track_options__dropdown li,
+#oncoprint-container .oncoprintjs__header__dropdown li {
+    border-width: 0 !important;
+    padding: 2px 5px;
+}
+#oncoprint-container .oncoprintjs__track_options__dropdown li:hover,
+#oncoprint-container .oncoprintjs__header__dropdown li:hover {
+    background: #fff !important;
+    text-decoration: underline;
+}
+.oncoprintjs__tooltip {
+    padding: 5px;
+    max-width: unset !important;
+    min-width: 225px !important;
+}
 
 /* ── Mutations tab ───────────────────────────────────────────────────────── */
 #mutations-tab { display: none; }
@@ -233,11 +285,12 @@ table#mut-table tr:hover td { background: #f9f9f9; }
     font-weight: 600;
     white-space: nowrap;
 }
-.mut-type-missense { background: #e8f5e9; color: #2e7d32; }
+.mut-type-missense { background: #e0f2e0; color: #006000; }
 .mut-type-trunc    { background: #212121; color: #fff; }
-.mut-type-inframe  { background: #f3e5d0; color: #7b4a0e; }
-.mut-type-splice   { background: #fce4ec; color: #c62828; }
-.mut-type-other    { background: #eeeeee; color: #555; }
+.mut-type-inframe  { background: #f3e5d0; color: #6e2f00; }
+.mut-type-splice   { background: #fde8d8; color: #b05a10; }
+.mut-type-promoter { background: #d0f4f8; color: #008090; }
+.mut-type-other    { background: #f5e0f0; color: #9a3090; }
 .ann-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 16px; height: 16px; border-radius: 50%;
@@ -300,7 +353,7 @@ table#mut-table tr:hover td { background: #f9f9f9; }
 
         <!-- Toolbar -->
         <div id="oncoprint-toolbar" style="position:relative;">
-            <div style="position:relative;">
+            <div class="btn-group" style="position:relative;">
                 <button class="btn btn-default btn-sm" id="tracks-btn">
                     Tracks <span class="caret"></span>
                 </button>
@@ -313,41 +366,72 @@ table#mut-table tr:hover td { background: #f9f9f9; }
                     </div>
                 </div>
             </div>
-            <button class="btn btn-default btn-sm" id="sort-btn" title="Sort samples">
-                Sort <span class="caret"></span>
-            </button>
-            <button class="btn btn-default btn-sm" id="download-btn" title="Download">
-                Download <span class="caret"></span>
-            </button>
-            <span class="zoom-label">Zoom:</span>
-            <input type="range" id="zoom-slider" min="0.01" max="1" step="0.01" value="0.3">
-            <span id="zoom-pct" style="font-size:12px;color:#666;min-width:30px;">30%</span>
+
+            <div class="btn-group">
+                <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
+                    Sort <span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a href="#" onclick="sortByData(); return false;">Sort by data</a></li>
+                    <li><a href="#" onclick="sortAlphabetically(); return false;">Sort alphabetically</a></li>
+                </ul>
+            </div>
+
+            <div class="btn-group">
+                <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
+                    Mutations <span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu" style="padding:6px 12px;">
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-type" checked> Distinguish mutation type</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-driver" checked> Distinguish driver mutations</label></li>
+                </ul>
+            </div>
+
+            <div class="btn-group">
+                <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
+                    View <span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu" style="padding:6px 12px;">
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-unaltered" checked> Show unaltered columns</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-whitespace"> Show whitespace between columns</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-minimap"> Show minimap</label></li>
+                </ul>
+            </div>
+
+            <div class="btn-group">
+                <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
+                    Download <span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a href="#" onclick="downloadOncoprint('pdf'); return false;">PDF</a></li>
+                    <li><a href="#" onclick="downloadOncoprint('png'); return false;">PNG</a></li>
+                    <li><a href="#" onclick="downloadOncoprint('svg'); return false;">SVG</a></li>
+                    <li role="separator" class="divider"></li>
+                    <li><a href="#">Tabular format</a></li>
+                </ul>
+            </div>
+
+            <!-- Zoom controls -->
+            <div class="zoom-group">
+                <button id="btn-zoom-out" class="btn btn-default btn-sm" title="Zoom out">
+                    <i class="fa-solid fa-magnifying-glass-minus"></i>
+                </button>
+                <input id="zoom-slider" type="range" min="1" max="100" value="1" title="Zoom">
+                <span id="zoom-pct">2%</span>
+                <button id="btn-zoom-in" class="btn btn-default btn-sm" title="Zoom in">
+                    <i class="fa-solid fa-magnifying-glass-plus"></i>
+                </button>
+                <button class="btn btn-default btn-sm" id="btn-minimap" title="Toggle minimap">
+                    <i class="fa-solid fa-map"></i>
+                </button>
+            </div>
         </div>
 
         <!-- OncoPrint canvas -->
         <div id="oncoprint-container">
             <div id="oncoprint-loading"><i class="fa fa-spinner fa-spin"></i> Loading OncoPrint…</div>
             <div id="oncoprint-error"></div>
-        </div>
-
-        <!-- Legend -->
-        <div id="oncoprint-legend">
-            <strong style="align-self:center;">Legend:</strong>
-            <span class="legend-item"><span class="legend-swatch" style="background:#00AA00;"></span>Missense</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#000000;"></span>Truncating</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#9F8170;"></span>In-frame</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#e9967a;"></span>Splice</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#CF58BC;"></span>Other</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#FF0000;"></span>Amplification</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#0000FF;"></span>Deep Deletion</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#FFB6C1;"></span>Gain</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:#ADD8E6;"></span>Shallow Deletion</span>
-            <span class="legend-item">
-                <svg width="14" height="14" viewBox="0 0 14 14">
-                    <rect x="3" y="2" width="8" height="10" fill="#8B00FF"/>
-                </svg>
-                Structural Variant
-            </span>
+            <div id="oncoprint-canvas" style="width:100%;"></div>
         </div>
     </div><!-- /oncoprint-tab -->
 
@@ -429,6 +513,8 @@ table#mut-table tr:hover td { background: #f9f9f9; }
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="/static/js/oncoprint-bundle.js"></script>
+<script src="/static/js/geneticrules.js"></script>
 <script>
 // ── Global tab state ─────────────────────────────────────────────────────────
 const STUDY_ID = {{ study_id | tojson }};
@@ -482,248 +568,318 @@ async function postForm(url, fields) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// OncoPrint Tab
+// OncoPrint Tab — uses bundled oncoprintjs + geneticrules.js
 // ════════════════════════════════════════════════════════════════════════════
+var CLINICAL_TRACK_GROUP = 0;
+var GENETIC_TRACK_GROUP  = 1;
+
+var oncoprint = null;
+var clinicalOptions = [];
+var activeTrackKeys = {};    // attr_id → numeric trackId
+var geneticTrackIds = {};    // gene → numeric trackId
+
+// ── Color helpers (0-255 RGBA for bundled oncoprintjs) ──────────────────────
+function hexToRGBA(hex) {
+    var s = hex.replace('#', '');
+    if (s.length === 3) s = s[0]+s[0]+s[1]+s[1]+s[2]+s[2];
+    return [parseInt(s.slice(0,2),16), parseInt(s.slice(2,4),16),
+            parseInt(s.slice(4,6),16), 1];
+}
+
+var CLINICAL_PALETTE = [
+    [228,26,28,1],[55,126,184,1],[77,175,74,1],[152,78,163,1],
+    [255,127,0,1],[166,86,40,1],[247,129,191,1],[153,153,153,1],
+    [102,194,165,1],[252,141,98,1],[141,160,203,1],[231,138,195,1],
+    [166,216,84,1],[255,217,47,1],[229,196,148,1],[179,179,179,1],
+    [27,158,119,1],[217,95,2,1],[117,112,179,1],[231,41,138,1],
+    [102,166,30,1],[230,171,2,1],[166,118,29,1],[64,176,166,1],
+];
+
+// ── Sort comparator (matches DeltaUtils.ts) ─────────────────────────────────
+function geneticComparator() {
+    var cna_order  = { amp:0, homdel:1, gain:2, hetloss:3, diploid:4, undefined:5 };
+    var mut_order  = { trunc_rec:0, splice_rec:1, inframe_rec:2, promoter_rec:3,
+                       missense_rec:4, other_rec:5,
+                       trunc:6, splice:7, inframe:8, promoter:9, missense:10, other:11,
+                       undefined:12 };
+    var sv_order   = { sv_rec:0, sv:1, undefined:2 };
+    var reg_order  = { up:0, down:1, undefined:2 };
+    return function(d1, d2) {
+        var keys   = ['disp_cna','disp_mut','disp_structuralVariant','disp_mrna','disp_prot'];
+        var orders = [cna_order, mut_order, sv_order, reg_order, reg_order];
+        var diff = 0;
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i], o = orders[i];
+            var v1 = d1[k], v2 = d2[k];
+            if (v1 && v2)       diff = (o[v1]||99) - (o[v2]||99);
+            else if (v1)        diff = -1;
+            else if (v2)        diff = 1;
+            if (diff !== 0) break;
+        }
+        return diff;
+    };
+}
+
+function clinicalSort(d1, d2) {
+    var a = d1.attr_val == null ? '\uffff' : String(d1.attr_val);
+    var b = d2.attr_val == null ? '\uffff' : String(d2.attr_val);
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// ── Zoom ────────────────────────────────────────────────────────────────────
+var currentZoom = 1.0;
+function applyZoom(z) {
+    currentZoom = Math.max(0.01, Math.min(2.0, z));
+    if (oncoprint) oncoprint.setHorzZoom(currentZoom);
+    document.getElementById('zoom-pct').textContent = Math.round(currentZoom * 100) + '%';
+    document.getElementById('zoom-slider').value = Math.round(currentZoom * 50);
+}
+
+function showOncoPrintError(msg) {
+    document.getElementById("oncoprint-loading").style.display = "none";
+    var el = document.getElementById("oncoprint-error");
+    el.textContent = "Error: " + msg;
+    el.style.display = "block";
+}
+
+// ── Sort toolbar actions ────────────────────────────────────────────────────
+function sortByData() {
+    if (oncoprint) oncoprint.setSortConfig({ type: '' });
+}
+function sortAlphabetically() {
+    if (oncoprint) oncoprint.setSortConfig({ type: 'alphabetical' });
+}
+function downloadOncoprint(fmt) {
+    // Placeholder for download functionality
+    console.log('Download ' + fmt + ' not yet implemented');
+}
+
+// ── Main loader ─────────────────────────────────────────────────────────────
 async function loadOncoprint() {
     oncoPrintLoaded = true;
 
-    let OncoprintJS;
+    document.getElementById("oncoprint-loading").style.display = "none";
+    var cw = document.getElementById("oncoprint-container").clientWidth || 1100;
+
     try {
-        const mod = await import("https://esm.sh/oncoprintjs@6.0.8?deps=gl-matrix@2.3.2");
-        OncoprintJS = mod.OncoprintJS;
+        oncoprint = new window.Oncoprint('#oncoprint-canvas', cw);
     } catch(e) {
-        document.getElementById("oncoprint-loading").style.display = "none";
-        const el = document.getElementById("oncoprint-error");
-        el.textContent = "Error: failed to load OncoprintJS — " + e.message;
-        el.style.display = "block";
+        showOncoPrintError("OncoprintJS failed: " + e.message);
         return;
     }
 
-    function h(hex) {
-        return [
-            parseInt(hex.slice(1,3),16)/255, parseInt(hex.slice(3,5),16)/255,
-            parseInt(hex.slice(5,7),16)/255, 1,
-        ];
-    }
-    const MUT_COLOR_MISSENSE  = h("#00AA00");
-    const MUT_COLOR_TRUNC     = h("#000000");
-    const MUT_COLOR_INFRAME   = h("#9F8170");
-    const MUT_COLOR_SPLICE    = h("#e9967a");
-    const MUT_COLOR_PROMOTER  = h("#00B0F0");
-    const MUT_COLOR_OTHER     = h("#CF58BC");
-    const CNA_COLOR_AMP       = h("#FF0000");
-    const CNA_COLOR_HOMDEL    = h("#0000FF");
-    const CNA_COLOR_GAIN      = h("#FFB6C1");
-    const CNA_COLOR_HETLOSS   = h("#ADD8E6");
-    const SV_COLOR            = h("#8B00FF");
-    const GREY                = h("#bebebe");
-
-    const GENETIC_RULE_SET_PARAMS = {
-        type: "gene",
-        legend_label: "Genetic Alteration",
-        na_legend_label: "Not profiled",
-        legend_base_color: GREY,
-        rule_params: {
-            always: { shapes: [{ type: "rectangle", fill: GREY, z: 1 }],
-                      legend_label: "No alterations", legend_order: 9999 },
-            conditional: {
-                disp_cna: {
-                    "amp":     { shapes: [{ type: "rectangle", fill: CNA_COLOR_AMP,    x:0, y:0, width:100, height:100, z:2 }], legend_label: "Amplification",    legend_order: 10 },
-                    "homdel":  { shapes: [{ type: "rectangle", fill: CNA_COLOR_HOMDEL, x:0, y:0, width:100, height:100, z:2 }], legend_label: "Deep Deletion",    legend_order: 12 },
-                    "gain":    { shapes: [{ type: "rectangle", fill: CNA_COLOR_GAIN,   x:0, y:0, width:100, height:100, z:2 }], legend_label: "Gain",             legend_order: 11 },
-                    "hetloss": { shapes: [{ type: "rectangle", fill: CNA_COLOR_HETLOSS,x:0, y:0, width:100, height:100, z:2 }], legend_label: "Shallow Deletion", legend_order: 13 },
-                },
-                disp_structuralVariant: {
-                    "sv": { shapes: [{ type: "rectangle", fill: SV_COLOR, x:0, y:20, width:100, height:60, z:5 }], legend_label: "Structural Variant", legend_order: 1 },
-                },
-                disp_mut: {
-                    "other":    { shapes: [{ type: "rectangle", fill: MUT_COLOR_OTHER,    x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Other Mutation",      legend_order: 0 },
-                    "promoter": { shapes: [{ type: "rectangle", fill: MUT_COLOR_PROMOTER, x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Promoter Mutation",   legend_order: 0 },
-                    "splice":   { shapes: [{ type: "rectangle", fill: MUT_COLOR_SPLICE,   x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Splice Mutation",     legend_order: 0 },
-                    "inframe":  { shapes: [{ type: "rectangle", fill: MUT_COLOR_INFRAME,  x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Inframe Mutation",    legend_order: 0 },
-                    "trunc":    { shapes: [{ type: "rectangle", fill: MUT_COLOR_TRUNC,    x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Truncating Mutation", legend_order: 0 },
-                    "missense": { shapes: [{ type: "rectangle", fill: MUT_COLOR_MISSENSE, x:0, y:33.33, width:100, height:33.33, z:6 }], legend_label: "Missense Mutation",   legend_order: 0 },
-                },
-                disp_germ: {
-                    "true": { shapes: [{ type: "rectangle", fill: h("#FFFFFF"), x:0, y:46, width:100, height:8, z:7 }], legend_label: "Germline Mutation", legend_order: 2 },
-                },
-            },
-        },
-    };
-
-    const MUT_ORDER = { trunc:0, splice:1, inframe:2, promoter:3, missense:4, other:5 };
-    const CNA_ORDER = { amp:0, homdel:1, gain:2, hetloss:3 };
-    function geneticSortVector(d) {
-        if (d.na) return [2, 0, 0];
-        const hasMut = d.disp_mut != null;
-        const hasCna = d.disp_cna != null;
-        const hasSv  = d.disp_structuralVariant != null;
-        if (!hasMut && !hasCna && !hasSv) return [1, 0, 0];
-        return [0, hasMut ? (MUT_ORDER[d.disp_mut] ?? 99) : 99,
-                   hasCna ? (CNA_ORDER[d.disp_cna] ?? 99) : 99];
-    }
-    const GENETIC_SORT_CMP = { mandatory: geneticSortVector, preferred: geneticSortVector, isVector: true };
-
-    const CBIO_COLORS = ["#3366cc","#dc3912","#ff9900","#109618","#990099","#0099c6","#dd4477","#66aa00","#b82e2e","#316395"];
-    function colorForValue(val, colorMap) {
-        if (!(val in colorMap)) colorMap[val] = CBIO_COLORS[Object.keys(colorMap).length % CBIO_COLORS.length];
-        return colorMap[val];
-    }
-
-    let oncoprint = null;
-    let geneticData = [];
-    let clinicalOptions = [];
-    let activeTrackKeys = {};
-    let colorMaps = {};
-
-    function showOncoPrintError(msg) {
-        document.getElementById("oncoprint-loading").style.display = "none";
-        const el = document.getElementById("oncoprint-error");
-        el.textContent = "Error: " + msg;
-        el.style.display = "block";
-    }
-
-    function initOncoprint(data) {
-        const container = document.getElementById("oncoprint-container");
-        document.getElementById("oncoprint-loading").style.display = "none";
-        const cw = container.clientWidth || 900;
-        try {
-            oncoprint = new OncoprintJS(container, cw, {
-                init_cell_width: 6, init_horz_zoom: 0.3, max_height: 600,
-            });
-        } catch(e) {
-            showOncoPrintError("OncoprintJS failed: " + e.message);
-            return;
-        }
-
-        // One track per gene
-        const tracks = GENES.map(g => ({
-            key: g + "_genetic",
-            label: g,
-            data: data[g] || [],
-            data_id_key: "uid",
-            rule_set_params: GENETIC_RULE_SET_PARAMS,
-            sortCmpFn: GENETIC_SORT_CMP,
-        }));
-        oncoprint.addTracks(tracks);
-
-        // Alteration summary using first gene
-        const firstData = data[GENES[0]] || [];
-        const altered = firstData.filter(d => d.disp_mut || d.disp_cna || d.disp_structuralVariant);
-        const alteredPat = new Set(altered.map(d => d.patient)).size;
-        const totalPat   = new Set(firstData.map(d => d.patient)).size;
-        const pct = totalPat > 0 ? ((alteredPat / totalPat) * 100).toFixed(1) : "0";
-        const summaryEl = document.getElementById("results-alteration-summary");
-        summaryEl.innerHTML =
-            `Queried genes altered in <strong>${alteredPat.toLocaleString()} (${pct}%)</strong> ` +
-            `of ${totalPat.toLocaleString()} patients`;
-        summaryEl.style.display = "block";
-    }
-
-    async function loadTracksPanel() {
-        clinicalOptions = await postForm("/results/oncoprint/clinical-options", { study_id: STUDY_ID });
-        const list = document.getElementById("tracks-list");
-        list.innerHTML = "";
-        clinicalOptions.forEach(opt => {
-            const item = document.createElement("div");
-            item.className = "tracks-panel-item";
-            const chk = document.createElement("input");
-            chk.type = "checkbox";
-            chk.id = "track-chk-" + opt.attr_id;
-            chk.dataset.attrId = opt.attr_id;
-            const lbl = document.createElement("label");
-            lbl.htmlFor = chk.id;
-            lbl.textContent = opt.display_name;
-            lbl.style.cssText = "margin:0;cursor:pointer;flex:1;";
-            const freq = document.createElement("span");
-            freq.className = "tracks-panel-freq";
-            freq.textContent = (opt.freq * 100).toFixed(0) + "%";
-            chk.addEventListener("change", () => {
-                if (chk.checked) addClinicalTrack(opt);
-                else removeClinicalTrack(opt.attr_id);
-            });
-            item.appendChild(chk); item.appendChild(lbl); item.appendChild(freq);
-            list.appendChild(item);
-        });
-        for (const opt of clinicalOptions.slice(0, 3)) {
-            const chk = document.getElementById("track-chk-" + opt.attr_id);
-            if (chk) { chk.checked = true; await addClinicalTrack(opt); }
-        }
-    }
-
-    async function addClinicalTrack(opt) {
-        if (!oncoprint || activeTrackKeys[opt.attr_id]) return;
-        const data = await postForm("/results/oncoprint/clinical-data", { study_id: STUDY_ID, attr_ids: opt.attr_id });
-        if (!colorMaps[opt.attr_id]) colorMaps[opt.attr_id] = {};
-        const cmap = colorMaps[opt.attr_id];
-        // Use first gene's data as sample order reference
-        const refData = oncoprint ? [] : geneticData;
-        const allSamples = Object.keys(data);
-        const trackData = allSamples.map(uid => {
-            const val = (data[uid] || {})[opt.attr_id];
-            return { uid, attr_val: val !== undefined ? String(val) : undefined };
-        });
-        const ruleSetParams = buildClinicalRuleSet(opt, trackData, cmap);
-        const trackKey = "clinical_" + opt.attr_id;
-        activeTrackKeys[opt.attr_id] = trackKey;
-        oncoprint.addTracks([{ key: trackKey, label: opt.display_name, data: trackData, data_id_key: "uid", rule_set_params: ruleSetParams, sortCmpFn: { mandatory: (d1,d2) => { if (!d1.attr_val && !d2.attr_val) return 0; if (!d1.attr_val) return 1; if (!d2.attr_val) return -1; return d1.attr_val < d2.attr_val ? -1 : d1.attr_val > d2.attr_val ? 1 : 0; }, preferred: () => 0 } }]);
-    }
-
-    function buildClinicalRuleSet(opt, trackData, cmap) {
-        if (opt.datatype === "NUMBER") {
-            const vals = trackData.map(d => parseFloat(d.attr_val)).filter(v => !isNaN(v));
-            return { type: "bar", legend_label: opt.display_name, value_key: "attr_val",
-                     value_range: [vals.length ? Math.min(...vals) : 0, vals.length ? Math.max(...vals) : 1] };
-        }
-        const unique = [...new Set(trackData.map(d => d.attr_val).filter(v => v !== undefined))];
-        unique.forEach(v => colorForValue(v, cmap));
-        const category_to_color = {};
-        for (const [val, hex] of Object.entries(cmap)) {
-            category_to_color[val] = h(hex);
-        }
-        return { type: "categorical", legend_label: opt.display_name, category_key: "attr_val", category_to_color };
-    }
-
-    function removeClinicalTrack(attrId) {
-        if (!oncoprint) return;
-        const key = activeTrackKeys[attrId];
-        if (!key) return;
-        oncoprint.removeTrack(key);
-        delete activeTrackKeys[attrId];
-    }
-
-    document.getElementById("zoom-slider").addEventListener("input", function() {
-        const val = parseFloat(this.value);
-        document.getElementById("zoom-pct").textContent = Math.round(val * 100) + "%";
-        if (oncoprint) oncoprint.setHorzZoom(val);
-    });
-
-    document.getElementById("tracks-btn").addEventListener("click", function(e) {
-        e.stopPropagation();
-        document.getElementById("tracks-panel").classList.toggle("open");
-    });
-    document.addEventListener("click", () => document.getElementById("tracks-panel").classList.remove("open"));
-    document.getElementById("tracks-panel").addEventListener("click", e => e.stopPropagation());
+    oncoprint.suppressRendering();
 
     // Load all genes in parallel
-    const dataMap = {};
-    await Promise.all(GENES.map(async gene => {
+    var dataMap = {};
+    await Promise.all(GENES.map(async function(gene) {
         try {
-            dataMap[gene] = await postForm("/results/oncoprint/genetic-data", { study_id: STUDY_ID, gene });
-        } catch(e) {
-            dataMap[gene] = [];
-        }
+            dataMap[gene] = await postForm("/results/oncoprint/genetic-data",
+                { study_id: STUDY_ID, gene: gene });
+        } catch(e) { dataMap[gene] = []; }
     }));
-    initOncoprint(dataMap);
+
+    // Add one genetic track per gene
+    var firstTrackId = null;
+    for (var i = 0; i < GENES.length; i++) {
+        var gene = GENES[i];
+        var geneData = dataMap[gene] || [];
+        var alteredCount = geneData.filter(function(d) {
+            return d.disp_cna || d.disp_mut || d.disp_structuralVariant;
+        }).length;
+        var pct = geneData.length > 0
+            ? Math.round((alteredCount / geneData.length) * 100) : 0;
+
+        var trackId = oncoprint.addTracks([{
+            rule_set_params: window.geneticrules.genetic_rule_set_different_colors_recurrence,
+            label: gene,
+            description: gene + ' mutations and copy number alterations',
+            info: pct + '%',
+            na_z: 1.1,
+            sortCmpFn: geneticComparator(),
+            sort_direction_changeable: true,
+            target_group: GENETIC_TRACK_GROUP,
+        }])[0];
+
+        geneticTrackIds[gene] = trackId;
+
+        // Share ruleset across genes for consistent legend
+        if (firstTrackId === null) {
+            firstTrackId = trackId;
+        } else {
+            oncoprint.shareRuleSet(firstTrackId, trackId);
+        }
+    }
+
+    // Configure group ordering now that tracks exist
+    oncoprint.setTrackGroupLegendOrder([GENETIC_TRACK_GROUP, CLINICAL_TRACK_GROUP]);
+    oncoprint.setTrackGroupSortPriority([GENETIC_TRACK_GROUP, CLINICAL_TRACK_GROUP]);
+
+    // Load data into tracks
+    oncoprint.keepSorted(false);
+    for (var j = 0; j < GENES.length; j++) {
+        var g = GENES[j];
+        oncoprint.setTrackData(geneticTrackIds[g], dataMap[g] || [], 'uid');
+
+        // Set tooltip
+        (function(gene) {
+            oncoprint.setTrackTooltipFn(geneticTrackIds[gene], function(data) {
+                var lines = ['<b>' + (data.uid || '') + '</b>'];
+                if (data.disp_cna) lines.push('CNA: ' + data.disp_cna.replace(/_rec$/, '').toUpperCase());
+                if (data.disp_mut) lines.push('Mutation: ' + data.disp_mut.replace(/_rec$/, ''));
+                if (data.disp_structuralVariant) lines.push('Structural variant');
+                if (data.disp_germ) lines.push('Germline');
+                if (!data.disp_cna && !data.disp_mut && !data.disp_structuralVariant) {
+                    lines.push(data.na ? 'Not profiled' : 'No alteration');
+                }
+                return lines.join('<br/>');
+            });
+        })(g);
+    }
+
+    oncoprint.keepSorted(true);
+    oncoprint.releaseRendering();
+
+    // Monkey-patch: oncoprintjs doesn't call resizeAndOrganize after all sort
+    // paths (e.g. track options menu Sort a-Z). Wrap sort() to always relayout.
+    var _origSort = oncoprint.sort.bind(oncoprint);
+    oncoprint.sort = function() {
+        var result = _origSort.apply(this, arguments);
+        oncoprint.resizeAndOrganizeAfterTimeout();
+        return result;
+    };
+
+    applyZoom(0.02);  // 2% default — same as cBioPortal
+
+    // Alteration summary
+    var firstData = dataMap[GENES[0]] || [];
+    var altered = firstData.filter(function(d) { return d.disp_mut || d.disp_cna || d.disp_structuralVariant; });
+    var alteredPat = new Set(altered.map(function(d) { return d.patient; })).size;
+    var totalPat   = new Set(firstData.map(function(d) { return d.patient; })).size;
+    var altPct = totalPat > 0 ? ((alteredPat / totalPat) * 100).toFixed(1) : "0";
+    var summaryEl = document.getElementById("results-alteration-summary");
+    summaryEl.innerHTML =
+        'Queried genes altered in <strong>' + alteredPat.toLocaleString() + ' (' + altPct + '%)</strong> ' +
+        'of ' + totalPat.toLocaleString() + ' patients';
+    summaryEl.style.display = "block";
+
+    // Load clinical tracks panel
     await loadTracksPanel();
 }
+
+// ── Clinical tracks panel ───────────────────────────────────────────────────
+async function loadTracksPanel() {
+    clinicalOptions = await postForm("/results/oncoprint/clinical-options", { study_id: STUDY_ID });
+    var list = document.getElementById("tracks-list");
+    list.innerHTML = "";
+    clinicalOptions.forEach(function(opt) {
+        var item = document.createElement("div");
+        item.className = "tracks-panel-item";
+        var chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.id = "track-chk-" + opt.attr_id;
+        chk.dataset.attrId = opt.attr_id;
+        var lbl = document.createElement("label");
+        lbl.htmlFor = chk.id;
+        lbl.textContent = opt.display_name;
+        lbl.style.cssText = "margin:0;cursor:pointer;flex:1;";
+        var freq = document.createElement("span");
+        freq.className = "tracks-panel-freq";
+        freq.textContent = (opt.freq * 100).toFixed(0) + "%";
+        chk.addEventListener("change", function() {
+            if (chk.checked) addClinicalTrack(opt);
+            else removeClinicalTrack(opt.attr_id);
+        });
+        item.appendChild(chk); item.appendChild(lbl); item.appendChild(freq);
+        list.appendChild(item);
+    });
+    for (var i = 0; i < Math.min(3, clinicalOptions.length); i++) {
+        var opt = clinicalOptions[i];
+        var chk = document.getElementById("track-chk-" + opt.attr_id);
+        if (chk) { chk.checked = true; await addClinicalTrack(opt); }
+    }
+}
+
+async function addClinicalTrack(opt) {
+    if (!oncoprint || activeTrackKeys[opt.attr_id] !== undefined) return;
+    var data = await postForm("/results/oncoprint/clinical-data",
+        { study_id: STUDY_ID, attr_ids: opt.attr_id });
+
+    var allSamples = Object.keys(data);
+    var trackData = allSamples.map(function(uid) {
+        var val = (data[uid] || {})[opt.attr_id];
+        return { uid: uid, attr_val: val !== undefined ? String(val) : undefined };
+    });
+
+    var ruleSetParams = buildClinicalRuleSet(opt, trackData);
+
+    var displayLabel = opt.display_name.length > 16
+        ? opt.display_name.substring(0, 14) + '...' : opt.display_name;
+
+    var trackId = oncoprint.addTracks([{
+        rule_set_params: ruleSetParams,
+        label: displayLabel,
+        description: opt.display_name,
+        na_z: 1.1,
+        sortCmpFn: clinicalSort,
+        sort_direction_changeable: true,
+        init_sort_direction: 0,
+        target_group: CLINICAL_TRACK_GROUP,
+        removable: true,
+    }])[0];
+
+    oncoprint.setTrackData(trackId, trackData, 'uid');
+    activeTrackKeys[opt.attr_id] = trackId;
+}
+
+function buildClinicalRuleSet(opt, trackData) {
+    if (opt.datatype === "NUMBER") {
+        var vals = trackData.map(function(d) { return parseFloat(d.attr_val); }).filter(function(v) { return !isNaN(v); });
+        return { type: 'bar', legend_label: opt.display_name, value_key: 'attr_val',
+                 value_range: [vals.length ? Math.min.apply(null, vals) : 0,
+                               vals.length ? Math.max.apply(null, vals) : 1] };
+    }
+    // Categorical — use 24-color palette (0-255 RGBA)
+    var seen = {}, unique = [];
+    trackData.forEach(function(d) {
+        if (d.attr_val && !seen[d.attr_val]) { seen[d.attr_val] = true; unique.push(d.attr_val); }
+    });
+    unique.sort();
+    var category_to_color = {};
+    unique.forEach(function(v, i) { category_to_color[v] = CLINICAL_PALETTE[i % CLINICAL_PALETTE.length]; });
+    return { type: 'categorical', legend_label: opt.display_name,
+             category_key: 'attr_val', category_to_color: category_to_color };
+}
+
+function removeClinicalTrack(attrId) {
+    if (!oncoprint) return;
+    var trackId = activeTrackKeys[attrId];
+    if (trackId === undefined) return;
+    oncoprint.removeTrack(trackId);
+    delete activeTrackKeys[attrId];
+}
+
+// ── Toolbar event wiring ────────────────────────────────────────────────────
+document.getElementById("tracks-btn").addEventListener("click", function(e) {
+    e.stopPropagation();
+    document.getElementById("tracks-panel").classList.toggle("open");
+});
+document.addEventListener("click", function() { document.getElementById("tracks-panel").classList.remove("open"); });
+document.getElementById("tracks-panel").addEventListener("click", function(e) { e.stopPropagation(); });
+
+document.getElementById('btn-zoom-in').addEventListener('click', function() { applyZoom(currentZoom * 1.3); });
+document.getElementById('btn-zoom-out').addEventListener('click', function() { applyZoom(currentZoom / 1.3); });
+document.getElementById('zoom-slider').addEventListener('input', function() { applyZoom(parseInt(this.value) / 50); });
+document.getElementById('btn-minimap').addEventListener('click', function() {
+    if (oncoprint) oncoprint.toggleMinimapVisibility();
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // Mutations Tab
 // ════════════════════════════════════════════════════════════════════════════
 const MUT_COLORS = {
-    missense: "#00AA00", trunc: "#000000", inframe: "#9F8170",
-    splice: "#e9967a", promoter: "#00B0F0", other: "#CF58BC",
+    missense: "#008000", trunc: "#000000", inframe: "#993404",
+    splice: "#e5802b", promoter: "#00B7CE", other: "#cf58bc",
 };
 
 let mutPage = 1;

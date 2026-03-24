@@ -21,10 +21,12 @@ def db():
     conn.execute(f'CREATE TABLE "{STUDY}_sample" (SAMPLE_ID VARCHAR, PATIENT_ID VARCHAR)')
     conn.execute(f"""
         CREATE TABLE "{STUDY}_mutations" (
+            study_id VARCHAR,
             SAMPLE_ID VARCHAR,
             Tumor_Sample_Barcode VARCHAR,
             Hugo_Symbol VARCHAR,
             Variant_Classification VARCHAR,
+            HGVSp_Short VARCHAR,
             Mutation_Status VARCHAR
         )
     """)
@@ -38,6 +40,7 @@ def db():
     """)
     conn.execute(f"""
         CREATE TABLE "{STUDY}_sv" (
+            study_id VARCHAR,
             Sample_Id VARCHAR,
             Site1_Hugo_Symbol VARCHAR,
             Site2_Hugo_Symbol VARCHAR
@@ -78,10 +81,10 @@ def _add_sample(conn, sid, pid="P1"):
     conn.execute(f'INSERT INTO "{STUDY}_sample" (SAMPLE_ID, PATIENT_ID) VALUES (?, ?)', (sid, pid))
 
 
-def _add_mut(conn, sid, gene, vc, status="Somatic"):
+def _add_mut(conn, sid, gene, vc, status="Somatic", hgvsp=""):
     conn.execute(
-        f'INSERT INTO "{STUDY}_mutations" VALUES (?, ?, ?, ?, ?)',
-        (sid, sid, gene, vc, status),
+        f'INSERT INTO "{STUDY}_mutations" VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (STUDY, sid, sid, gene, vc, hgvsp, status),
     )
 
 
@@ -236,21 +239,21 @@ def test_cna_wrong_gene_ignored(db):
 
 def test_sv_detected_site1(db):
     _add_sample(db, "S1")
-    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?)', ("S1", "KRAS", "OTHER"))
+    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?, ?)', (STUDY, "S1", "KRAS", "OTHER"))
     result = get_oncoprint_data(db, STUDY, "KRAS")
     assert result[0]["disp_structuralVariant"] == "sv"
 
 
 def test_sv_detected_site2(db):
     _add_sample(db, "S1")
-    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?)', ("S1", "OTHER", "KRAS"))
+    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?, ?)', (STUDY, "S1", "OTHER", "KRAS"))
     result = get_oncoprint_data(db, STUDY, "KRAS")
     assert result[0]["disp_structuralVariant"] == "sv"
 
 
 def test_sv_other_gene_not_detected(db):
     _add_sample(db, "S1")
-    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?)', ("S1", "TP53", "OTHER"))
+    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?, ?)', (STUDY, "S1", "TP53", "OTHER"))
     result = get_oncoprint_data(db, STUDY, "KRAS")
     assert result[0]["disp_structuralVariant"] is None
 
@@ -350,3 +353,107 @@ def test_clinical_track_data_null_not_included(db_with_clinical):
     result = get_clinical_track_data(db, STUDY, ["CANCER_TYPE"])
     # NULL values are excluded from the dict
     assert "CANCER_TYPE" not in result.get("S1", {})
+
+
+# ── Driver annotation (_rec suffix) ─────────────────────────────────────────
+
+@pytest.fixture
+def db_with_annotations(db):
+    """Add variant_annotations table for driver testing."""
+    db.execute(f"""
+        CREATE TABLE "{STUDY}_variant_annotations" (
+            study_id VARCHAR,
+            sample_id VARCHAR,
+            hugo_symbol VARCHAR,
+            alteration_type VARCHAR,
+            variant_classification VARCHAR,
+            hgvsp_short VARCHAR,
+            moalmanac_clinical_significance VARCHAR,
+            hotspot_type VARCHAR
+        )
+    """)
+    return db
+
+
+def test_missense_rec_with_fda_annotation(db_with_annotations):
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    _add_mut(db, "S1", "KRAS", "Missense_Mutation", hgvsp="p.G12D")
+    db.execute(
+        f'INSERT INTO "{STUDY}_variant_annotations" VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (STUDY, "S1", "KRAS", "MUTATION", "Missense_Mutation", "p.G12D", "FDA-Approved", None),
+    )
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_mut"] == "missense_rec"
+
+
+def test_missense_vus_without_annotation(db_with_annotations):
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    _add_mut(db, "S1", "KRAS", "Missense_Mutation", hgvsp="p.A146T")
+    # No matching annotation → bare type
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_mut"] == "missense"
+
+
+def test_clinical_evidence_also_driver(db_with_annotations):
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    _add_mut(db, "S1", "KRAS", "Missense_Mutation", hgvsp="p.G12C")
+    db.execute(
+        f'INSERT INTO "{STUDY}_variant_annotations" VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (STUDY, "S1", "KRAS", "MUTATION", "Missense_Mutation", "p.G12C", "Clinical evidence", None),
+    )
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_mut"] == "missense_rec"
+
+
+def test_trunc_rec_beats_missense_vus(db_with_annotations):
+    """Driver truncating should beat VUS missense in priority."""
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    _add_mut(db, "S1", "KRAS", "Missense_Mutation", hgvsp="p.A146T")
+    _add_mut(db, "S1", "KRAS", "Frame_Shift_Del", hgvsp="p.V14fs")
+    db.execute(
+        f'INSERT INTO "{STUDY}_variant_annotations" VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (STUDY, "S1", "KRAS", "MUTATION", "Frame_Shift_Del", "p.V14fs", "FDA-Approved", None),
+    )
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_mut"] == "trunc_rec"
+
+
+def test_no_annotations_table_graceful(db):
+    """Studies without variant_annotations table should still work (bare types)."""
+    _add_sample(db, "S1")
+    _add_mut(db, "S1", "KRAS", "Missense_Mutation")
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_mut"] == "missense"
+
+
+def test_sv_driver_annotation(db_with_annotations):
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?, ?)', (STUDY, "S1", "KRAS", "OTHER"))
+    db.execute(
+        f'INSERT INTO "{STUDY}_variant_annotations" VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (STUDY, "S1", "KRAS", "SV", None, None, "FDA-Approved", None),
+    )
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_structuralVariant"] == "sv_rec"
+
+
+def test_sv_vus_no_annotation(db_with_annotations):
+    db = db_with_annotations
+    _add_sample(db, "S1")
+    db.execute(f'INSERT INTO "{STUDY}_sv" VALUES (?, ?, ?, ?)', (STUDY, "S1", "KRAS", "OTHER"))
+    # No annotation for SV → bare "sv"
+    result = get_oncoprint_data(db, STUDY, "KRAS")
+    assert result[0]["disp_structuralVariant"] == "sv"
+
+
+def test_priority_rec_beats_bare(db_with_annotations):
+    """_rec suffix variants should have higher priority than bare variants."""
+    from cbioportal.core.oncoprint_repository import _mut_priority
+    assert _mut_priority("missense_rec") > _mut_priority("missense")
+    assert _mut_priority("trunc_rec") > _mut_priority("trunc")
+    assert _mut_priority("missense_rec") > _mut_priority("trunc")  # rec beats any bare

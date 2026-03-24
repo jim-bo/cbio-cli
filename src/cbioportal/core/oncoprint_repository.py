@@ -20,9 +20,13 @@ _VARIANT_TO_DISP = {
 }
 
 # Priority order: higher index = higher priority (last one wins when iterating)
+# _rec suffix = driver (MoAlmanac FDA-Approved / Clinical evidence); ranked above VUS
 _MUT_PRIORITY = [
     "other", "promoter", "missense", "inframe", "splice", "trunc",
+    "other_rec", "promoter_rec", "missense_rec", "inframe_rec", "splice_rec", "trunc_rec",
 ]
+
+_DRIVER_SIGNIFICANCE = {"FDA-Approved", "Clinical evidence"}
 
 
 def _classify_mutation(variant_classification: str | None) -> str:
@@ -83,20 +87,50 @@ def get_oncoprint_data(
 
     if has_mutations_table:
         sample_col = "Tumor_Sample_Barcode" if "Tumor_Sample_Barcode" in cols else "SAMPLE_ID"
-        mut_sql = f"""
-            SELECT
-                {sample_col} AS sample_id,
-                Variant_Classification,
-                COALESCE(Mutation_Status, '') AS mutation_status
-            FROM "{study_id}_mutations"
-            WHERE Hugo_Symbol = ?
-              AND COALESCE(Mutation_Status, '') != 'UNCALLED'
-        """
+        # Check for variant_annotations table (driver status)
+        has_va = False
+        try:
+            conn.execute(f'SELECT 1 FROM "{study_id}_variant_annotations" LIMIT 1')
+            has_va = True
+        except Exception:
+            pass
+
+        if has_va:
+            mut_sql = f"""
+                SELECT
+                    m.{sample_col} AS sample_id,
+                    m.Variant_Classification,
+                    COALESCE(m.Mutation_Status, '') AS mutation_status,
+                    va.moalmanac_clinical_significance
+                FROM "{study_id}_mutations" m
+                LEFT JOIN "{study_id}_variant_annotations" va
+                    ON va.study_id = m.study_id
+                    AND va.sample_id = m.{sample_col}
+                    AND va.hugo_symbol = m.Hugo_Symbol
+                    AND va.alteration_type = 'MUTATION'
+                    AND va.variant_classification = m.Variant_Classification
+                    AND va.hgvsp_short = m.HGVSp_Short
+                WHERE m.Hugo_Symbol = ?
+                  AND COALESCE(m.Mutation_Status, '') != 'UNCALLED'
+            """
+        else:
+            mut_sql = f"""
+                SELECT
+                    {sample_col} AS sample_id,
+                    Variant_Classification,
+                    COALESCE(Mutation_Status, '') AS mutation_status,
+                    NULL AS moalmanac_clinical_significance
+                FROM "{study_id}_mutations"
+                WHERE Hugo_Symbol = ?
+                  AND COALESCE(Mutation_Status, '') != 'UNCALLED'
+            """
         for row in conn.execute(mut_sql, [gene]).fetchall():
-            sid, vc, mut_status = row
+            sid, vc, mut_status, clin_sig = row
             if sid not in mut_rows:
                 mut_rows[sid] = []
             disp = _classify_mutation(vc)
+            if clin_sig in _DRIVER_SIGNIFICANCE:
+                disp += "_rec"
             is_germline = mut_status.lower() == "germline"
             mut_rows[sid].append((disp, is_germline))
 
@@ -121,16 +155,43 @@ def get_oncoprint_data(
     except Exception:
         pass
 
-    # 4. Fetch SV for this gene
-    sv_set: set[str] = set()
+    # 4. Fetch SV for this gene (with driver status from variant_annotations)
+    sv_map: dict[str, str] = {}  # sample_id → "sv_rec" | "sv"
     try:
-        sv_sql = f"""
-            SELECT COALESCE(Sample_Id, SAMPLE_ID) AS sample_id
-            FROM "{study_id}_sv"
-            WHERE Site1_Hugo_Symbol = ? OR Site2_Hugo_Symbol = ?
-        """
-        for row in conn.execute(sv_sql, [gene, gene]).fetchall():
-            sv_set.add(row[0])
+        # Check for variant_annotations
+        sv_has_va = False
+        try:
+            conn.execute(f'SELECT 1 FROM "{study_id}_variant_annotations" LIMIT 1')
+            sv_has_va = True
+        except Exception:
+            pass
+
+        if sv_has_va:
+            sv_sql = f"""
+                SELECT COALESCE(s.Sample_Id, s.SAMPLE_ID) AS sample_id,
+                       va.moalmanac_clinical_significance
+                FROM "{study_id}_sv" s
+                LEFT JOIN "{study_id}_variant_annotations" va
+                    ON va.study_id = s.study_id
+                    AND va.sample_id = COALESCE(s.Sample_Id, s.SAMPLE_ID)
+                    AND va.hugo_symbol = ?
+                    AND va.alteration_type = 'SV'
+                WHERE s.Site1_Hugo_Symbol = ? OR s.Site2_Hugo_Symbol = ?
+            """
+            for row in conn.execute(sv_sql, [gene, gene, gene]).fetchall():
+                sid, clin_sig = row
+                is_driver = clin_sig in _DRIVER_SIGNIFICANCE
+                # Keep highest priority: sv_rec > sv
+                if sid not in sv_map or (is_driver and sv_map[sid] == "sv"):
+                    sv_map[sid] = "sv_rec" if is_driver else "sv"
+        else:
+            sv_sql = f"""
+                SELECT COALESCE(Sample_Id, SAMPLE_ID) AS sample_id
+                FROM "{study_id}_sv"
+                WHERE Site1_Hugo_Symbol = ? OR Site2_Hugo_Symbol = ?
+            """
+            for row in conn.execute(sv_sql, [gene, gene]).fetchall():
+                sv_map[row[0]] = "sv"
     except Exception:
         pass
 
@@ -195,11 +256,11 @@ def get_oncoprint_data(
             "patient": sample_to_patient.get(sid, sid),
             "disp_mut": disp_mut,
             "disp_cna": cna_map.get(sid),
-            "disp_structuralVariant": "sv" if sid in sv_set else None,
+            "disp_structuralVariant": sv_map.get(sid),
             "disp_germ": disp_germ,
             "not_profiled_for_mutations": sid in not_profiled_mut,
             "not_profiled_for_cna": sid in not_profiled_cna,
-            "na": (sid in not_profiled_mut and sid in not_profiled_cna and sid not in sv_set),
+            "na": (sid in not_profiled_mut and sid in not_profiled_cna and sid not in sv_map),
         })
 
     return result
