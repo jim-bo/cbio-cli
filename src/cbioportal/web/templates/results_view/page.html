@@ -178,6 +178,8 @@
 /* ── Mutations tab ───────────────────────────────────────────────────────── */
 #mutations-tab { display: none; }
 #mutations-tab.active { display: block; }
+#cancer-types-tab { display: none; }
+#plots-tab { display: none; }
 
 /* gene selector tabs */
 #mut-gene-tabs {
@@ -346,6 +348,10 @@ table#mut-table tr:hover td { background: #f9f9f9; }
     <div id="results-tab-nav">
         <div class="results-tab{% if active_tab == 'oncoprint' %} active{% endif %}"
              data-tab="oncoprint" onclick="switchTab('oncoprint')">OncoPrint</div>
+        <div class="results-tab{% if active_tab == 'cancer-types' %} active{% endif %}"
+             data-tab="cancer-types" onclick="switchTab('cancer-types')">Cancer Types Summary</div>
+        <div class="results-tab{% if active_tab == 'plots' %} active{% endif %}"
+             data-tab="plots" onclick="switchTab('plots')">Plots</div>
         <div class="results-tab{% if active_tab == 'mutations' %} active{% endif %}"
              data-tab="mutations" onclick="switchTab('mutations')">Mutations</div>
     </div>
@@ -523,12 +529,23 @@ table#mut-table tr:hover td { background: #f9f9f9; }
         </div>
     </div><!-- /mutations-tab -->
 
+    <!-- ── Cancer Types Summary Tab ─────────────────────────────────────── -->
+    <div id="cancer-types-tab">
+        <div style="padding: 16px; color: #999;">Loading Cancer Types Summary…</div>
+    </div>
+
+    <!-- ── Plots Tab ────────────────────────────────────────────────────── -->
+    <div id="plots-tab">
+        <div style="padding: 16px; color: #999;">Loading Plots…</div>
+    </div>
+
 </div><!-- /results-page -->
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="/static/js/oncoprint-bundle.js"></script>
 <script src="/static/js/geneticrules.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script>
 // ── Global tab state ─────────────────────────────────────────────────────────
 const STUDY_ID = {{ study_id | tojson }};
@@ -539,16 +556,21 @@ let activeTab = {{ active_tab | tojson }};
 let oncoPrintLoaded = false;
 let mutationsGene = GENE_0;
 
+let ctsLoaded = false;
+let plotsInited = false;
+
 function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll(".results-tab").forEach(el => {
         el.classList.toggle("active", el.dataset.tab === tab);
     });
-    var opTab = document.getElementById("oncoprint-tab");
-    var mutTab = document.getElementById("mutations-tab");
-    opTab.classList.toggle("hidden", tab !== "oncoprint");
-    opTab.style.display = (tab === "oncoprint") ? "block" : "none";
-    mutTab.style.display = (tab === "mutations") ? "block" : "none";
+    ["oncoprint", "mutations", "cancer-types", "plots"].forEach(t => {
+        var el = document.getElementById(t + "-tab");
+        if (el) {
+            el.classList.toggle("hidden", t !== tab);
+            el.style.display = (t === tab) ? "block" : "none";
+        }
+    });
 
     if (tab === "oncoprint" && !oncoPrintLoaded && STUDY_ID && GENES.length) {
         loadOncoprint();
@@ -556,22 +578,40 @@ function switchTab(tab) {
     if (tab === "mutations") {
         loadMutations(mutationsGene);
     }
+    if (tab === "cancer-types" && !ctsLoaded && STUDY_ID && GENES.length) {
+        loadCancerTypesSummary(GENE_0);
+        ctsLoaded = true;
+    }
+    if (tab === "plots" && !plotsInited && STUDY_ID && GENES.length) {
+        initPlotsTab();
+        plotsInited = true;
+    }
 }
 
 // ── On page load ─────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
-    // Apply initial display based on active_tab from server
-    var opTab = document.getElementById("oncoprint-tab");
-    opTab.classList.toggle("hidden", activeTab !== "oncoprint");
-    opTab.style.display = (activeTab === "oncoprint") ? "block" : "none";
-    document.getElementById("mutations-tab").style.display =
-        (activeTab === "mutations") ? "block" : "none";
+    // Apply initial display for all tabs
+    ["oncoprint", "mutations", "cancer-types", "plots"].forEach(t => {
+        var el = document.getElementById(t + "-tab");
+        if (el) {
+            el.classList.toggle("hidden", t !== activeTab);
+            el.style.display = (t === activeTab) ? "block" : "none";
+        }
+    });
 
     if (activeTab === "oncoprint" && STUDY_ID && GENES.length) {
         loadOncoprint();
     }
     if (activeTab === "mutations") {
         loadMutations(mutationsGene);
+    }
+    if (activeTab === "cancer-types" && STUDY_ID && GENES.length) {
+        loadCancerTypesSummary(GENE_0);
+        ctsLoaded = true;
+    }
+    if (activeTab === "plots" && STUDY_ID && GENES.length) {
+        initPlotsTab();
+        plotsInited = true;
     }
 });
 
@@ -1405,6 +1445,22 @@ function onMutSearch(val) {
             tr.style.display = q && !tr.textContent.toLowerCase().includes(q) ? "none" : "";
         });
     }, 200);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Cancer Types Summary Tab — placeholder (Phase 3)
+// ════════════════════════════════════════════════════════════════════════════
+function loadCancerTypesSummary(gene) {
+    document.getElementById("cancer-types-tab").innerHTML =
+        '<div style="padding:16px;color:#999;">Cancer Types Summary — loading for ' + gene + '…</div>';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Plots Tab — placeholder (Phase 4)
+// ════════════════════════════════════════════════════════════════════════════
+function initPlotsTab() {
+    document.getElementById("plots-tab").innerHTML =
+        '<div style="padding:16px;color:#999;">Plots tab — initializing…</div>';
 }
 </script>
 {% endblock %}

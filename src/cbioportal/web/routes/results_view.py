@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import Annotated
 
+import json
+
 from cbioportal.core.oncoprint_repository import (
     get_oncoprint_data,
     get_clinical_track_options,
@@ -12,6 +14,11 @@ from cbioportal.core.oncoprint_repository import (
     get_lollipop_data,
     get_mutation_summary,
     get_mutations_table,
+)
+from cbioportal.core.plots_repository import (
+    get_cancer_types_summary,
+    get_clinical_attribute_options,
+    get_plots_data,
 )
 
 router = APIRouter()
@@ -155,4 +162,48 @@ async def mutations_table_data(
     """Return paginated mutation rows for the mutations table."""
     conn = request.app.state.db_conn
     data = get_mutations_table(conn, study_id, gene, page, page_size, sort_col, sort_dir)
+    return JSONResponse(data)
+
+
+# ── Cancer Types Summary Tab ─────────────────────────────────────────────────
+
+@router.post("/results/oncoprint/cancer-types-summary")
+async def cancer_types_summary(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    gene: Annotated[str, Form()],
+    group_by: Annotated[str, Form()] = "CANCER_TYPE",
+    count_by: Annotated[str, Form()] = "patients",
+):
+    """Return alteration breakdown per cancer type for one gene."""
+    conn = request.app.state.db_conn
+    data = get_cancer_types_summary(conn, study_id, gene, group_by, count_by)
+    return JSONResponse(data)
+
+
+# ── Plots Tab ────────────────────────────────────────────────────────────────
+
+@router.post("/results/oncoprint/plots-data")
+async def plots_data(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    h_config: Annotated[str, Form()] = "{}",
+    v_config: Annotated[str, Form()] = "{}",
+):
+    """Return cross-tabulated data for the plots chart."""
+    conn = request.app.state.db_conn
+    h = json.loads(h_config)
+    v = json.loads(v_config)
+    data = get_plots_data(conn, study_id, h, v)
+    return JSONResponse(data)
+
+
+@router.post("/results/oncoprint/plots-clinical-options")
+async def plots_clinical_options(
+    request: Request,
+    study_id: Annotated[str, Form()],
+):
+    """Return available clinical attributes for axis dropdowns."""
+    conn = request.app.state.db_conn
+    data = get_clinical_attribute_options(conn, study_id)
     return JSONResponse(data)
