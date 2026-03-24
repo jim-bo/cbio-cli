@@ -1,12 +1,75 @@
-<div style="display: flex; flex-direction: row; align-items: center; justify-content: center; margin-top: 10px; padding: 10px 0;">
+<div id="study-selector-footer" style="display: flex; flex-direction: row; align-items: center; justify-content: center; margin-top: 10px; padding: 10px 0;">
     <div style="width: 330px; text-align: right; margin-right: 20px;">
         <a style="cursor: pointer;"><div><b>{{ total_studies }}</b> studies available (<b>{{ "{:,}".format(total_samples) }}</b> samples)</div></a>
     </div>
-    <a class="btn btn-primary btn-lg disabled" style="margin: 0 10px;">
+    <a id="btn-query-by-gene" class="btn btn-primary btn-lg disabled" style="margin: 0 10px;" onclick="openQueryForm()">
         <i class="fa fa-search" style="margin-top: 4px; margin-right: -2px;"></i>&nbsp; Query By Gene
     </a>
     OR
-    <a class="btn btn-primary btn-lg disabled" style="margin: 0 10px;">
+    <a id="btn-explore-studies" class="btn btn-primary btn-lg disabled" style="margin: 0 10px;" onclick="exploreSelectedStudies()">
         <i class="ci ci-pie-chart" style="margin-top: 5px;"></i> Explore Selected Studies
     </a>
 </div>
+
+<script>
+// Track selected studies globally
+window.selectedStudies = new Map(); // id → {name, samples}
+
+function updateStudySelection() {
+    window.selectedStudies.clear();
+    document.querySelectorAll('.study-checkbox:checked').forEach(function(chk) {
+        window.selectedStudies.set(chk.dataset.studyId, {
+            name: chk.dataset.studyName,
+            samples: parseInt(chk.dataset.studySamples) || 0,
+        });
+    });
+
+    var n = window.selectedStudies.size;
+    var qBtn = document.getElementById('btn-query-by-gene');
+    var eBtn = document.getElementById('btn-explore-studies');
+
+    if (n > 0) {
+        qBtn.classList.remove('disabled');
+        eBtn.classList.remove('disabled');
+    } else {
+        qBtn.classList.add('disabled');
+        eBtn.classList.add('disabled');
+    }
+}
+
+function exploreSelectedStudies() {
+    if (window.selectedStudies.size === 0) return;
+    var firstId = window.selectedStudies.keys().next().value;
+    window.location.href = '/study/summary?id=' + encodeURIComponent(firstId);
+}
+
+function openQueryForm() {
+    if (window.selectedStudies.size === 0) return;
+    // Collect study IDs
+    var studyIds = Array.from(window.selectedStudies.keys());
+    // Fetch query form via HTMX-style fetch
+    var formData = new FormData();
+    formData.append('study_ids', studyIds.join(','));
+    fetch('/query-form', { method: 'POST', body: formData })
+        .then(function(res) { return res.text(); })
+        .then(function(html) {
+            // Replace the study selector content with the query form
+            var mainCol = document.getElementById('mainColumn');
+            // Save current content for "Modify" button
+            window._studySelectorHTML = mainCol.innerHTML;
+            mainCol.innerHTML = html;
+        });
+}
+
+function restoreStudySelector() {
+    if (window._studySelectorHTML) {
+        var mainCol = document.getElementById('mainColumn');
+        mainCol.innerHTML = window._studySelectorHTML;
+        // Re-check previously selected studies
+        window.selectedStudies.forEach(function(info, studyId) {
+            var chk = document.querySelector('.study-checkbox[data-study-id="' + studyId + '"]');
+            if (chk) chk.checked = true;
+        });
+    }
+}
+</script>
