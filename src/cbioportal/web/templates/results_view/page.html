@@ -2084,15 +2084,16 @@ function renderPlotsBar() {
     };
     var valAxis = {
         type: 'value',
-        name: d.v_label + (plotType === 'pct' ? ' (%)' : '\n# samples'),
+        name: d.v_label + '\n# samples',
         nameLocation: 'middle', nameGap: 50,
         axisLabel: { formatter: plotType === 'pct' ? '{value}%' : '{value}' },
     };
+    if (plotType === 'pct') valAxis.name = d.v_label + ' (%)';
 
     var option = {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        legend: { bottom: 10, icon: 'rect', itemWidth: 12, itemHeight: 12 },
-        grid: { left: 70, right: 40, top: 20, bottom: 80 },
+        legend: { bottom: 0, icon: 'rect', itemWidth: 12, itemHeight: 12 },
+        grid: { left: 70, right: 40, top: 20, bottom: 100 },
         xAxis: horizontal ? valAxis : catAxis,
         yAxis: horizontal ? catAxis : valAxis,
         series: series,
