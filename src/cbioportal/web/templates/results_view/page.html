@@ -530,9 +530,11 @@ function switchTab(tab) {
     document.querySelectorAll(".results-tab").forEach(el => {
         el.classList.toggle("active", el.dataset.tab === tab);
     });
-    document.getElementById("oncoprint-tab").style.display = (tab === "oncoprint") ? "" : "none";
-    const mutEl = document.getElementById("mutations-tab");
-    mutEl.style.display = (tab === "mutations") ? "" : "none";
+    var opTab = document.getElementById("oncoprint-tab");
+    var mutTab = document.getElementById("mutations-tab");
+    opTab.classList.toggle("hidden", tab !== "oncoprint");
+    opTab.style.display = (tab === "oncoprint") ? "block" : "none";
+    mutTab.style.display = (tab === "mutations") ? "block" : "none";
 
     if (tab === "oncoprint" && !oncoPrintLoaded && STUDY_ID && GENES.length) {
         loadOncoprint();
@@ -545,10 +547,11 @@ function switchTab(tab) {
 // ── On page load ─────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
     // Apply initial display based on active_tab from server
-    document.getElementById("oncoprint-tab").style.display =
-        (activeTab === "oncoprint") ? "" : "none";
+    var opTab = document.getElementById("oncoprint-tab");
+    opTab.classList.toggle("hidden", activeTab !== "oncoprint");
+    opTab.style.display = (activeTab === "oncoprint") ? "block" : "none";
     document.getElementById("mutations-tab").style.display =
-        (activeTab === "mutations") ? "" : "none";
+        (activeTab === "mutations") ? "block" : "none";
 
     if (activeTab === "oncoprint" && STUDY_ID && GENES.length) {
         loadOncoprint();
