@@ -178,8 +178,100 @@
 /* ── Mutations tab ───────────────────────────────────────────────────────── */
 #mutations-tab { display: none; }
 #mutations-tab.active { display: block; }
-#cancer-types-tab { display: none; }
-#plots-tab { display: none; }
+#cancer-types-tab { display: none; padding: 0; }
+#plots-tab { display: none; padding: 0; }
+
+/* ── Cancer Types Summary ─────────────────────────────────────────────── */
+#cts-wrap { display: flex; gap: 0; min-height: 500px; }
+#cts-sidebar {
+    width: 260px; min-width: 260px;
+    border-right: 1px solid #e8e8e8;
+    padding: 12px 16px;
+    font-size: 13px;
+    overflow-y: auto;
+}
+#cts-sidebar .cts-section {
+    position: relative;
+    padding-left: 28px;
+    margin-bottom: 14px;
+}
+#cts-sidebar .cts-section-label {
+    position: absolute; left: 0; top: 0;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-weight: 600; color: #2374c8; font-size: 12px;
+    letter-spacing: 1px;
+}
+#cts-sidebar label { display: block; font-weight: normal; margin: 2px 0; cursor: pointer; font-size: 12px; }
+#cts-sidebar .cts-heading { font-weight: 600; margin: 10px 0 4px; font-size: 12px; }
+#cts-sidebar select { width: 100%; font-size: 12px; padding: 3px 4px; }
+#cts-sidebar input[type=range] { width: 100%; margin: 4px 0; }
+#cts-sidebar .slider-row { display: flex; align-items: center; gap: 8px; }
+#cts-sidebar .slider-row input[type=number] {
+    width: 60px; font-size: 12px; padding: 2px 4px;
+    border: 1px solid #ccc; border-radius: 3px;
+}
+#cts-sidebar .slider-row .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: #999; }
+
+#cts-chart-area { flex: 1; padding: 12px 16px; position: relative; }
+#cts-gene-tabs { margin-bottom: 8px; }
+#cts-gene-tabs .cts-gene-btn {
+    display: inline-block; padding: 4px 12px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid #ddd; border-radius: 3px;
+    margin-right: 4px; cursor: pointer;
+    background: #f5f5f5; color: #333;
+}
+#cts-gene-tabs .cts-gene-btn.active { background: #2374c8; color: #fff; border-color: #2374c8; }
+#cts-chart-container { width: 100%; height: 500px; }
+
+/* profiling status grid */
+#cts-profiling { margin-top: 4px; font-size: 11px; }
+#cts-profiling table { border-collapse: collapse; }
+#cts-profiling td { padding: 2px 4px; text-align: center; }
+#cts-profiling .prof-label { text-align: right; font-weight: 500; padding-right: 8px; }
+#cts-profiling .prof-yes { color: #333; font-weight: bold; }
+#cts-profiling .prof-no { color: #ccc; }
+
+/* ── Plots Tab ────────────────────────────────────────────────────────── */
+#plots-wrap { display: flex; gap: 0; min-height: 500px; }
+#plots-sidebar {
+    width: 280px; min-width: 280px;
+    border-right: 1px solid #e8e8e8;
+    padding: 12px 16px;
+    font-size: 13px;
+}
+#plots-sidebar .axis-section {
+    position: relative;
+    padding-left: 28px;
+    margin-bottom: 8px;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 10px 10px 10px 28px;
+}
+#plots-sidebar .axis-label {
+    position: absolute; left: 2px; top: 10px;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-weight: 600; color: #2374c8; font-size: 11px;
+}
+#plots-sidebar .axis-heading { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+#plots-sidebar select { width: 100%; font-size: 12px; padding: 3px 4px; margin-bottom: 6px; }
+#plots-sidebar .swap-btn {
+    display: block; margin: 6px auto; padding: 4px 12px;
+    font-size: 12px; color: #2374c8; background: none;
+    border: none; cursor: pointer; font-weight: 500;
+}
+#plots-sidebar .swap-btn:hover { text-decoration: underline; }
+#plots-controls { margin-top: 10px; }
+#plots-controls .cts-heading { font-weight: 600; font-size: 12px; margin: 8px 0 4px; }
+#plots-controls select { width: 100%; font-size: 12px; padding: 3px 4px; margin-bottom: 6px; }
+#plots-controls label { font-size: 12px; font-weight: normal; }
+
+#plots-chart-area { flex: 1; padding: 12px 16px; position: relative; }
+#plots-info { font-size: 13px; color: #333; margin-bottom: 8px; padding: 6px 10px; background: #f9f9f9; border: 1px solid #eee; border-radius: 3px; display: inline-block; }
+#plots-chart-container { width: 100%; height: 500px; }
+#plots-examples { margin-bottom: 8px; font-size: 13px; }
+#plots-examples a { margin-left: 8px; cursor: pointer; color: #2374c8; text-decoration: none; }
+#plots-examples a:hover { text-decoration: underline; }
 
 /* gene selector tabs */
 #mut-gene-tabs {
@@ -531,7 +623,72 @@ table#mut-table tr:hover td { background: #f9f9f9; }
 
     <!-- ── Cancer Types Summary Tab ─────────────────────────────────────── -->
     <div id="cancer-types-tab">
-        <div style="padding: 16px; color: #999;">Loading Cancer Types Summary…</div>
+      <div id="cts-gene-tabs" style="padding: 8px 16px 0;">
+        {% for g in genes %}
+        <span class="cts-gene-btn{% if loop.first %} active{% endif %}" onclick="switchCtsGene('{{ g }}', this)">{{ g }}</span>
+        {% endfor %}
+      </div>
+      <div id="cts-wrap">
+        <div id="cts-sidebar">
+          <!-- Category Type -->
+          <div class="cts-section">
+            <span class="cts-section-label">Category</span>
+            <div class="cts-heading">Category Type</div>
+            <label><input type="radio" name="cts-group" value="study_id"> Cancer Study</label>
+            <label><input type="radio" name="cts-group" value="CANCER_TYPE" checked> Cancer Type</label>
+            <label><input type="radio" name="cts-group" value="CANCER_TYPE_DETAILED"> Cancer Type Detailed</label>
+
+            <div class="cts-heading">Filter Categories</div>
+            <div style="font-size:11px;margin-bottom:2px;">Min. # Total Patients</div>
+            <div class="slider-row">
+              <input type="range" id="cts-min-total" min="0" max="100" value="10"
+                     oninput="document.getElementById('cts-min-total-val').value=this.value; renderCtsChart();">
+              <input type="number" id="cts-min-total-val" value="10" min="0"
+                     onchange="document.getElementById('cts-min-total').value=this.value; renderCtsChart();">
+            </div>
+            <div class="range-labels"><span>0</span><span id="cts-max-total">100</span></div>
+
+            <div style="font-size:11px;margin-bottom:2px;margin-top:6px;">Min. % Altered Patients</div>
+            <div class="slider-row">
+              <input type="range" id="cts-min-pct" min="0" max="100" value="0"
+                     oninput="document.getElementById('cts-min-pct-val').value=this.value+'%'; renderCtsChart();">
+              <input type="number" id="cts-min-pct-val" value="0" min="0" max="100"
+                     onchange="document.getElementById('cts-min-pct').value=parseInt(this.value)||0; renderCtsChart();">
+            </div>
+            <div class="range-labels"><span>0%</span><span id="cts-max-pct">100%</span></div>
+
+            <div class="cts-heading">Sort X-Axis By</div>
+            <select id="cts-sort" onchange="renderCtsChart();">
+              <option value="y-axis">Y-Axis Values</option>
+              <option value="alpha">Alphabetically</option>
+            </select>
+          </div>
+
+          <!-- Occurrence -->
+          <div class="cts-section">
+            <span class="cts-section-label">Occurrence</span>
+            <div class="cts-heading">Count By</div>
+            <label><input type="radio" name="cts-count" value="samples"> Samples</label>
+            <label><input type="radio" name="cts-count" value="patients" checked> Patients</label>
+
+            <div class="cts-heading">Y-Axis Value</div>
+            <select id="cts-yaxis" onchange="renderCtsChart();">
+              <option value="alt-freq">Alteration Frequency</option>
+              <option value="abs-count">Absolute Counts</option>
+            </select>
+          </div>
+
+          <label style="margin-top:8px;">
+            <input type="checkbox" id="cts-show-genomic" checked onchange="renderCtsChart();">
+            Show Genomic Alteration Types
+          </label>
+        </div>
+
+        <div id="cts-chart-area">
+          <div id="cts-chart-container"></div>
+          <div id="cts-profiling"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Plots Tab ────────────────────────────────────────────────────── -->
@@ -1448,12 +1605,206 @@ function onMutSearch(val) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Cancer Types Summary Tab — placeholder (Phase 3)
+// Cancer Types Summary Tab
 // ════════════════════════════════════════════════════════════════════════════
-function loadCancerTypesSummary(gene) {
-    document.getElementById("cancer-types-tab").innerHTML =
-        '<div style="padding:16px;color:#999;">Cancer Types Summary — loading for ' + gene + '…</div>';
+const ALTERATION_COLORS = {
+    mutation:           '#008000',
+    structural_variant: '#8B00C9',
+    amplification:      '#ff0000',
+    deep_deletion:      '#0000ff',
+    shallow_deletion:   '#8fd8d8',
+    gain:               'rgb(255,182,193)',
+    multiple:           '#666666',
+};
+const ALTERATION_LABELS = {
+    mutation: 'Mutation', structural_variant: 'Structural Variant',
+    amplification: 'Amplification', deep_deletion: 'Deep Deletion',
+    shallow_deletion: 'Shallow Deletion', gain: 'Gain', multiple: 'Multiple Alterations',
+};
+const ALT_TYPES = ['mutation','structural_variant','amplification','deep_deletion','gain','shallow_deletion','multiple'];
+
+let ctsChart = null;
+let ctsDataCache = {};  // gene -> server response
+let ctsActiveGene = GENE_0;
+
+function switchCtsGene(gene, el) {
+    ctsActiveGene = gene;
+    document.querySelectorAll("#cts-gene-tabs .cts-gene-btn").forEach(b =>
+        b.classList.toggle("active", b.textContent.trim() === gene));
+    if (ctsDataCache[gene]) {
+        renderCtsChart();
+    } else {
+        loadCancerTypesSummary(gene);
+    }
 }
+
+async function loadCancerTypesSummary(gene) {
+    ctsActiveGene = gene || ctsActiveGene;
+    var groupBy = document.querySelector('input[name="cts-group"]:checked').value;
+    var countBy = document.querySelector('input[name="cts-count"]:checked').value;
+    try {
+        var data = await postForm("/results/oncoprint/cancer-types-summary", {
+            study_id: STUDY_ID, gene: ctsActiveGene, group_by: groupBy, count_by: countBy,
+        });
+        ctsDataCache[ctsActiveGene] = data;
+        // Update slider max values
+        if (data.categories.length) {
+            var maxTotal = Math.max(...data.categories.map(c => c.total));
+            document.getElementById("cts-min-total").max = maxTotal;
+            document.getElementById("cts-max-total").textContent = maxTotal;
+            var maxPct = Math.max(...data.categories.map(c => {
+                var altered = ALT_TYPES.reduce((s,t) => s + (c[t]||0), 0) - (c.multiple||0);
+                return c.total ? Math.round(altered / c.total * 100) : 0;
+            }));
+            document.getElementById("cts-max-pct").textContent = maxPct + "%";
+            document.getElementById("cts-min-pct").max = maxPct;
+        }
+        renderCtsChart();
+    } catch(e) {
+        console.error("CTS load error:", e);
+    }
+}
+
+function renderCtsChart() {
+    var data = ctsDataCache[ctsActiveGene];
+    if (!data || !data.categories.length) return;
+
+    var minTotal = parseInt(document.getElementById("cts-min-total").value) || 0;
+    var minPct = parseInt(document.getElementById("cts-min-pct").value) || 0;
+    var sortBy = document.getElementById("cts-sort").value;
+    var yAxis = document.getElementById("cts-yaxis").value;
+    var showGenomic = document.getElementById("cts-show-genomic").checked;
+
+    // Filter
+    var cats = data.categories.filter(c => {
+        if (c.total < minTotal) return false;
+        var altered = ALT_TYPES.reduce((s,t) => s + (c[t]||0), 0) - (c.multiple||0);
+        var pct = c.total ? (altered / c.total * 100) : 0;
+        return pct >= minPct;
+    });
+
+    // Sort
+    if (sortBy === "alpha") {
+        cats.sort((a,b) => a.name.localeCompare(b.name));
+    } else {
+        cats.sort((a,b) => {
+            var aAlt = ALT_TYPES.reduce((s,t) => s + (a[t]||0), 0) - (a.multiple||0);
+            var bAlt = ALT_TYPES.reduce((s,t) => s + (b[t]||0), 0) - (b.multiple||0);
+            var aVal = a.total ? aAlt/a.total : 0;
+            var bVal = b.total ? bAlt/b.total : 0;
+            return bVal - aVal;
+        });
+    }
+
+    // Build ECharts option
+    var catNames = cats.map(c => c.name);
+
+    // Determine which alteration types to show
+    var typesToShow = showGenomic ? ALT_TYPES : ['mutation','multiple'];
+
+    var series = typesToShow.map(type => ({
+        name: ALTERATION_LABELS[type],
+        type: 'bar',
+        stack: 'total',
+        data: cats.map(c => {
+            var val = c[type] || 0;
+            if (yAxis === "alt-freq") {
+                return c.total ? +(val / c.total * 100).toFixed(1) : 0;
+            }
+            return val;
+        }),
+        itemStyle: { color: ALTERATION_COLORS[type] },
+        emphasis: { focus: 'series' },
+    }));
+
+    if (!ctsChart) {
+        ctsChart = echarts.init(document.getElementById("cts-chart-container"));
+        window.addEventListener("resize", () => ctsChart && ctsChart.resize());
+    }
+
+    ctsChart.setOption({
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                var cat = params[0].name;
+                var catData = cats.find(c => c.name === cat);
+                var lines = ['<b>' + cat + '</b>'];
+                if (catData) {
+                    var altered = ALT_TYPES.reduce((s,t) => s + (catData[t]||0), 0) - (catData.multiple||0);
+                    var pct = catData.total ? (altered / catData.total * 100).toFixed(1) : 0;
+                    lines.push('Altered: ' + altered + '/' + catData.total + ' (' + pct + '%)');
+                }
+                params.forEach(p => {
+                    if (p.value > 0) {
+                        lines.push('<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + p.color + ';margin-right:4px;"></span>' + p.seriesName + ': ' + p.value + (yAxis === 'alt-freq' ? '%' : ''));
+                    }
+                });
+                return lines.join('<br>');
+            },
+        },
+        legend: {
+            bottom: 10,
+            data: typesToShow.map(t => ALTERATION_LABELS[t]),
+            icon: 'circle',
+            itemWidth: 10, itemHeight: 10,
+        },
+        grid: { left: 60, right: 40, top: 20, bottom: 80 },
+        xAxis: {
+            type: 'category',
+            data: catNames,
+            axisLabel: { rotate: 45, fontSize: 11, interval: 0 },
+        },
+        yAxis: {
+            type: 'value',
+            name: yAxis === 'alt-freq' ? 'Alteration Frequency' : 'Absolute Counts',
+            nameLocation: 'middle',
+            nameGap: 45,
+            axisLabel: {
+                formatter: yAxis === 'alt-freq' ? '{value}%' : '{value}',
+            },
+        },
+        series: series,
+        toolbox: {
+            right: 10, top: 0,
+            feature: { saveAsImage: { title: 'Download', pixelRatio: 2 } },
+        },
+    }, true);
+
+    // Render profiling status
+    renderCtsProfilingGrid(cats);
+}
+
+function renderCtsProfilingGrid(cats) {
+    var prof = document.getElementById("cts-profiling");
+    if (!cats.length) { prof.innerHTML = ""; return; }
+
+    var dataTypes = [
+        {key: "sv", label: "Structural variant data"},
+        {key: "mutation", label: "Mutation data"},
+        {key: "cna", label: "CNA data"},
+    ];
+
+    var html = '<table><tbody>';
+    dataTypes.forEach(dt => {
+        html += '<tr><td class="prof-label">' + dt.label + '</td>';
+        cats.forEach(c => {
+            var profiled = c.profiled && c.profiled[dt.key] > 0;
+            html += '<td class="' + (profiled ? 'prof-yes' : 'prof-no') + '">&#10010;</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    prof.innerHTML = html;
+}
+
+// Re-fetch when group_by or count_by changes
+document.querySelectorAll('input[name="cts-group"], input[name="cts-count"]').forEach(el => {
+    el.addEventListener("change", () => {
+        ctsDataCache = {};  // clear cache since grouping changed
+        loadCancerTypesSummary(ctsActiveGene);
+    });
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // Plots Tab — placeholder (Phase 4)
