@@ -360,8 +360,12 @@ table#mut-table tr:hover td { background: #f9f9f9; }
                     Tracks <span class="caret"></span>
                 </button>
                 <div id="tracks-panel">
-                    <div style="padding:6px 12px;font-size:11px;color:#888;border-bottom:1px solid #eee;">
-                        Select clinical tracks (sorted by completeness)
+                    <div style="padding:6px 12px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                        <input type="text" id="tracks-search" placeholder="Search..."
+                               style="flex:1;min-width:100px;font-size:12px;padding:3px 6px;border:1px solid #ccc;border-radius:3px;"
+                               oninput="filterTracks(this.value)">
+                        <button class="btn btn-default btn-xs" onclick="selectAllTracks(true)">Select all</button>
+                        <button class="btn btn-default btn-xs" onclick="selectAllTracks(false)">Deselect all</button>
                     </div>
                     <div id="tracks-list">
                         <div style="padding:8px 12px;color:#aaa;font-size:12px;">Loading…</div>
@@ -369,47 +373,55 @@ table#mut-table tr:hover td { background: #f9f9f9; }
                 </div>
             </div>
 
+            <!-- Sort menu -->
             <div class="btn-group">
                 <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
                     Sort <span class="caret"></span>
                 </button>
-                <ul class="dropdown-menu">
-                    <li><a href="#" onclick="sortByData(); return false;">Sort by data</a></li>
-                    <li><a href="#" onclick="sortAlphabetically(); return false;">Sort alphabetically</a></li>
+                <ul class="dropdown-menu" style="padding:8px 12px;min-width:220px;" onclick="event.stopPropagation();">
+                    <li style="white-space:nowrap;"><label><input type="radio" name="sort-mode" id="sort-by-data" checked onchange="updateSort()"> Sort by data</label></li>
+                    <li style="white-space:nowrap;padding-left:20px;"><label><input type="checkbox" id="sort-mutation-type" checked onchange="updateSort()"> Mutation Type</label></li>
+                    <li style="white-space:nowrap;padding-left:20px;"><label><input type="checkbox" id="sort-drivers" checked onchange="updateSort()"> Driver/Passenger</label></li>
+                    <li style="white-space:nowrap;"><label><input type="radio" name="sort-mode" id="sort-alphabetical" onchange="updateSort()"> Sort by case id (alphabetical)</label></li>
                 </ul>
             </div>
 
+            <!-- Mutations menu (Color By) -->
             <div class="btn-group">
                 <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
                     Mutations <span class="caret"></span>
                 </button>
-                <ul class="dropdown-menu" style="padding:6px 12px;">
-                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-type" checked> Distinguish mutation type</label></li>
-                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-driver" checked> Distinguish driver mutations</label></li>
+                <ul class="dropdown-menu" style="padding:8px 12px;min-width:200px;" onclick="event.stopPropagation();">
+                    <li style="color:#2374c8;font-size:11px;font-weight:600;margin-bottom:4px;">Color by</li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-type" checked onchange="updateRuleSet()"> Type</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-distinguish-driver" checked onchange="updateRuleSet()"> Driver/Passenger</label></li>
                 </ul>
             </div>
 
+            <!-- View menu -->
             <div class="btn-group">
                 <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
                     View <span class="caret"></span>
                 </button>
-                <ul class="dropdown-menu" style="padding:6px 12px;">
-                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-unaltered" checked> Show unaltered columns</label></li>
-                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-whitespace"> Show whitespace between columns</label></li>
-                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-minimap"> Show minimap</label></li>
+                <ul class="dropdown-menu" style="padding:8px 12px;min-width:250px;" onclick="event.stopPropagation();">
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-unaltered" checked onchange="toggleUnaltered()"> Show unaltered columns</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-whitespace" onchange="toggleWhitespace()"> Show whitespace between columns</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-legends" checked onchange="toggleLegends()"> Show legends for clinical tracks</label></li>
+                    <li style="white-space:nowrap;"><label><input type="checkbox" id="chk-minimap" onchange="toggleMinimap()"> Show minimap</label></li>
                 </ul>
             </div>
 
+            <!-- Download menu -->
             <div class="btn-group">
                 <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown">
                     Download <span class="caret"></span>
                 </button>
-                <ul class="dropdown-menu">
+                <ul class="dropdown-menu" style="min-width:160px;">
                     <li><a href="#" onclick="downloadOncoprint('pdf'); return false;">PDF</a></li>
                     <li><a href="#" onclick="downloadOncoprint('png'); return false;">PNG</a></li>
                     <li><a href="#" onclick="downloadOncoprint('svg'); return false;">SVG</a></li>
                     <li role="separator" class="divider"></li>
-                    <li><a href="#">Tabular format</a></li>
+                    <li><a href="#" onclick="downloadOncoprint('order'); return false;">Patient order</a></li>
                 </ul>
             </div>
 
@@ -647,16 +659,124 @@ function showOncoPrintError(msg) {
     el.style.display = "block";
 }
 
-// ── Sort toolbar actions ────────────────────────────────────────────────────
-function sortByData() {
-    if (oncoprint) oncoprint.setSortConfig({ type: '' });
+// ── Sort ────────────────────────────────────────────────────────────────────
+function updateSort() {
+    if (!oncoprint) return;
+    if (document.getElementById('sort-alphabetical').checked) {
+        oncoprint.setSortConfig({ type: 'alphabetical' });
+    } else {
+        // Sort by data — the default track comparator handles it
+        oncoprint.setSortConfig({ type: '' });
+    }
 }
-function sortAlphabetically() {
-    if (oncoprint) oncoprint.setSortConfig({ type: 'alphabetical' });
+
+// ── Mutations (Color By) — switch between the 4 genetic rulesets ────────────
+function updateRuleSet() {
+    if (!oncoprint) return;
+    var distinguishType = document.getElementById('chk-distinguish-type').checked;
+    var distinguishDriver = document.getElementById('chk-distinguish-driver').checked;
+    var rules = window.geneticrules;
+    var ruleSet;
+    if (distinguishType && distinguishDriver) {
+        ruleSet = rules.genetic_rule_set_different_colors_recurrence;
+    } else if (distinguishType && !distinguishDriver) {
+        ruleSet = rules.genetic_rule_set_different_colors_no_recurrence;
+    } else if (!distinguishType && distinguishDriver) {
+        ruleSet = rules.genetic_rule_set_same_color_for_all_recurrence;
+    } else {
+        ruleSet = rules.genetic_rule_set_same_color_for_all_no_recurrence;
+    }
+    for (var gene in geneticTrackIds) {
+        oncoprint.setRuleSet(geneticTrackIds[gene], ruleSet);
+    }
+    oncoprint.resizeAndOrganizeAfterTimeout();
 }
+
+// ── View menu handlers ──────────────────────────────────────────────────────
+var allGeneticData = {};  // stored after load for hideIds
+function toggleUnaltered() {
+    if (!oncoprint) return;
+    var showUnaltered = document.getElementById('chk-unaltered').checked;
+    if (showUnaltered) {
+        oncoprint.hideIds([], true);  // show all
+    } else {
+        // Hide samples with no alterations across all genes
+        var unalteredIds = [];
+        var firstGene = GENES[0];
+        var data = allGeneticData[firstGene] || [];
+        data.forEach(function(d) {
+            if (!d.disp_mut && !d.disp_cna && !d.disp_structuralVariant && !d.na) {
+                unalteredIds.push(d.uid);
+            }
+        });
+        oncoprint.hideIds(unalteredIds, false);
+    }
+    oncoprint.resizeAndOrganizeAfterTimeout();
+}
+
+function toggleWhitespace() {
+    if (!oncoprint) return;
+    var on = document.getElementById('chk-whitespace').checked;
+    oncoprint.setCellPaddingOn(on);
+}
+
+function toggleLegends() {
+    if (!oncoprint) return;
+    var show = document.getElementById('chk-legends').checked;
+    var clinicalIds = Object.keys(activeTrackKeys).map(function(k) { return activeTrackKeys[k]; });
+    if (show) {
+        oncoprint.showTrackLegends(clinicalIds);
+    } else {
+        oncoprint.hideTrackLegends(clinicalIds);
+    }
+    oncoprint.resizeAndOrganizeAfterTimeout();
+}
+
+function toggleMinimap() {
+    if (!oncoprint) return;
+    var show = document.getElementById('chk-minimap').checked;
+    oncoprint.setMinimapVisible(show);
+}
+
+// ── Download handlers ───────────────────────────────────────────────────────
 function downloadOncoprint(fmt) {
-    // Placeholder for download functionality
-    console.log('Download ' + fmt + ' not yet implemented');
+    if (!oncoprint) return;
+    if (fmt === 'svg') {
+        var svgEl = oncoprint.toSVG(false);
+        var serializer = new XMLSerializer();
+        var svgStr = serializer.serializeToString(svgEl);
+        var blob = new Blob([svgStr], { type: 'image/svg+xml' });
+        _downloadBlob(blob, 'oncoprint.svg');
+    } else if (fmt === 'png') {
+        oncoprint.toCanvas(function(canvas, truncated) {
+            canvas.toBlob(function(blob) {
+                _downloadBlob(blob, 'oncoprint.png');
+            });
+        }, 2);
+    } else if (fmt === 'pdf') {
+        // PDF requires a library (jsPDF + svg2pdf). For now, fall back to SVG.
+        var svgEl2 = oncoprint.toSVG(false);
+        var serializer2 = new XMLSerializer();
+        var svgStr2 = serializer2.serializeToString(svgEl2);
+        var blob2 = new Blob([svgStr2], { type: 'image/svg+xml' });
+        _downloadBlob(blob2, 'oncoprint.svg');
+    } else if (fmt === 'order') {
+        var ids = oncoprint.getIdOrder();
+        var text = ids.join('\n') + '\n';
+        var blob3 = new Blob([text], { type: 'text/plain' });
+        _downloadBlob(blob3, 'patient_order.txt');
+    }
+}
+
+function _downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // ── Main loader ─────────────────────────────────────────────────────────────
@@ -774,6 +894,9 @@ async function loadOncoprint() {
         'Queried genes altered in <strong>' + alteredPat.toLocaleString() + ' (' + altPct + '%)</strong> ' +
         'of ' + totalPat.toLocaleString() + ' patients';
     summaryEl.style.display = "block";
+
+    // Store data for view menu (hideIds)
+    allGeneticData = dataMap;
 
     // Load clinical tracks panel
     await loadTracksPanel();
@@ -895,6 +1018,27 @@ function removeClinicalTrack(attrId) {
     delete activeTrackKeys[attrId];
 }
 
+function filterTracks(query) {
+    var q = query.toLowerCase();
+    document.querySelectorAll('.tracks-panel-item').forEach(function(item) {
+        var label = item.querySelector('label');
+        var text = label ? label.textContent.toLowerCase() : '';
+        item.style.display = (!q || text.indexOf(q) > -1) ? '' : 'none';
+    });
+}
+
+function selectAllTracks(select) {
+    document.querySelectorAll('.tracks-panel-item').forEach(function(item) {
+        if (item.style.display === 'none') return; // skip filtered-out items
+        var chk = item.querySelector('input[type=checkbox]');
+        if (!chk) return;
+        if (chk.checked !== select) {
+            chk.checked = select;
+            chk.dispatchEvent(new Event('change'));
+        }
+    });
+}
+
 // ── Toolbar event wiring ────────────────────────────────────────────────────
 document.getElementById("tracks-btn").addEventListener("click", function(e) {
     e.stopPropagation();
@@ -907,7 +1051,9 @@ document.getElementById('btn-zoom-in').addEventListener('click', function() { ap
 document.getElementById('btn-zoom-out').addEventListener('click', function() { applyZoom(currentZoom / 1.3); });
 document.getElementById('zoom-slider').addEventListener('input', function() { applyZoom(parseInt(this.value) / 50); });
 document.getElementById('btn-minimap').addEventListener('click', function() {
-    if (oncoprint) oncoprint.toggleMinimapVisibility();
+    var chk = document.getElementById('chk-minimap');
+    chk.checked = !chk.checked;
+    toggleMinimap();
 });
 
 // ════════════════════════════════════════════════════════════════════════════
