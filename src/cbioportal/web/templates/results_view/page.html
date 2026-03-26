@@ -748,6 +748,14 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               Horizontal Bars
             </label>
           </div>
+          <!-- Box plot controls -->
+          <div id="plots-box-controls" style="display:none;">
+            <div class="cts-heading">Sort By</div>
+            <select id="plots-box-sort" onchange="renderPlotsChart()">
+              <option value="alpha">Alphabetically</option>
+              <option value="median">Sort by median</option>
+            </select>
+          </div>
           <!-- Scatter/Box-specific controls -->
           <div id="plots-scatter-controls" style="display:none;">
             <div class="cts-heading">Options</div>
@@ -2171,8 +2179,10 @@ async function loadPlotsData() {
         });
         // Show/hide plot-type-specific controls
         var barControls = document.getElementById("plots-controls");
+        var boxControls = document.getElementById("plots-box-controls");
         var scatterControls = document.getElementById("plots-scatter-controls");
         barControls.style.display = plotsData.plot_type === "bar" ? "block" : "none";
+        boxControls.style.display = plotsData.plot_type === "box" ? "block" : "none";
         scatterControls.style.display = (plotsData.plot_type === "scatter" || plotsData.plot_type === "box") ? "block" : "none";
         // Log scale checkboxes: only for numeric axes (scatter has both, box has one)
         document.getElementById("plots-log-h").parentElement.style.display =
@@ -2520,15 +2530,25 @@ function renderPlotsScatter() {
 function renderPlotsBox() {
     var d = plotsData;
     var logV = document.getElementById("plots-log-v").checked;
+    var sortBy = document.getElementById("plots-box-sort").value;
 
-    var boxData = d.box_data;
+    // Sort categories
+    var indices = d.categories.map(function(_, i) { return i; });
+    if (sortBy === "median") {
+        indices.sort(function(a, b) { return d.box_data[b][2] - d.box_data[a][2]; });
+    } else {
+        indices.sort(function(a, b) { return d.categories[a].localeCompare(d.categories[b]); });
+    }
+    var cats = indices.map(function(i) { return d.categories[i]; });
+    var boxData = indices.map(function(i) { return d.box_data[i]; });
+
     if (logV) {
         boxData = boxData.map(function(b) { return b.map(_applyLog); });
     }
     var vLabel = d.v_label + (logV ? ' (log2(value + 1))' : '');
 
     // Legacy MultipleCategoryBarPlot.tsx:672-686: bottomPadding = biggestCategoryLabelSize
-    var maxLabelPx = Math.max(...d.categories.map(function(label) { return label.length * 6.5; }));
+    var maxLabelPx = Math.max(...cats.map(function(label) { return label.length * 6.5; }));
     var boxBottomPad = maxLabelPx * Math.abs(Math.sin(50 * Math.PI / 180)) + 20;
 
     var container = document.getElementById("plots-chart-container");
@@ -2540,7 +2560,7 @@ function renderPlotsBox() {
         tooltip: { trigger: 'item' },
         grid: { left: 90, right: 40, top: 20, bottom: boxBottomPad },
         xAxis: {
-            type: 'category', data: d.categories,
+            type: 'category', data: cats,
             axisLabel: { rotate: 50, fontSize: 11, interval: 0 },
         },
         yAxis: { type: 'value', name: vLabel, nameLocation: 'middle', nameGap: 50 },
