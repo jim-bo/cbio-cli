@@ -222,7 +222,7 @@
     background: #f5f5f5; color: #333;
 }
 #cts-gene-tabs .cts-gene-btn.active { background: #2374c8; color: #fff; border-color: #2374c8; }
-#cts-chart-container { height: 600px; }
+#cts-chart-container { /* height set dynamically by renderCtsChart() to match legacy svgHeight */ }
 
 /* profiling status grid */
 #cts-profiling { margin-top: 4px; font-size: 11px; }
@@ -266,9 +266,9 @@
 #plots-controls select { width: 100%; font-size: 12px; padding: 3px 4px; margin-bottom: 6px; }
 #plots-controls label { font-size: 12px; font-weight: normal; }
 
-#plots-chart-area { flex: 1; padding: 12px 16px; position: relative; }
+#plots-chart-area { flex: 1; padding: 12px 16px; position: relative; overflow: auto; }
 #plots-info { font-size: 13px; color: #333; margin-bottom: 8px; padding: 6px 10px; background: #f9f9f9; border: 1px solid #eee; border-radius: 3px; display: inline-block; }
-#plots-chart-container { width: 100%; height: 500px; }
+#plots-chart-container { /* width/height set dynamically by renderPlotsBar/Scatter/Box */ width: 100%; height: 500px; }
 #plots-examples { margin-bottom: 8px; font-size: 13px; }
 #plots-examples a { margin-left: 8px; cursor: pointer; color: #2374c8; text-decoration: none; }
 #plots-examples a:hover { text-decoration: underline; }
@@ -1778,24 +1778,15 @@ function renderCtsChart() {
         emphasis: { focus: 'series' },
     }));
 
-    // Size container to match category count (legacy: barWidth=20 + barSeparation=8 = 28px/bar)
-    var chartW = Math.max(300, catNames.length * 28 + 190);  // 150 left + 40 right padding
+    // ── Container sizing ──────────────────────────────────────────────────
+    // Legacy: CancerSummaryChart.tsx
+    //   chartWidth  = xLabels.length * (barWidth + barSeparation) + 100
+    //   barWidth=20, barSeparation=8  → 28px per bar
+    var chartW = Math.max(300, catNames.length * 28 + 190);  // +150 left +40 right padding
     var container = document.getElementById("cts-chart-container");
     container.style.width = chartW + "px";
 
-    if (!ctsChart) {
-        ctsChart = echarts.init(container);
-        window.addEventListener("resize", () => {
-            if (!ctsChart) return;
-            var newW = Math.max(300, catNames.length * 28 + 190);
-            container.style.width = newW + "px";
-            ctsChart.resize({width: newW});
-        });
-    } else {
-        ctsChart.resize({width: chartW});
-    }
-
-    // Build profiling scatter data (✚ marks below bars)
+    // ── Build profiling scatter data (✚ marks below bars) ────────────────
     var profDataTypes = [
         {key: "sv", label: "Structural variant data"},
         {key: "mutation", label: "Mutation data"},
@@ -1811,19 +1802,36 @@ function renderCtsChart() {
         });
     });
 
-    // Calculate bottom space for profiling grid + x-labels
-    // Use legacy adjustedLongestLabelLength formula: caps*2 + lowercase*1 + spaces*2
+    // ── Layout constants matching legacy CancerSummaryChart.tsx ──────────
+    // adjustedLongestLabelLength: VictoryChartUtils.ts
+    //   caps*2 + lowercase*1 + spaces*2 + other*1  (per label, take max)
+    // bottomPadding: CancerSummaryChart.tsx:477
+    //   adjustedLongestLabelLength(xLabels) * 5 + 40  (uncapped)
     function adjustedLabelLength(label) {
         var caps = (label.match(/[A-Z]/g) || []).length;
         var lower = (label.match(/[a-z]/g) || []).length;
         var spaces = (label.match(/\s/g) || []).length;
-        return caps * 2 + lower * 1 + spaces * 2;
+        var other = label.length - caps - lower - spaces;
+        return caps * 2 + lower * 1 + spaces * 2 + other * 1;
     }
     var longestAdjusted = Math.max(...catNames.map(adjustedLabelLength));
-    var xLabelHeight = Math.min(longestAdjusted * 5 + 40, 150);
-    var profGridHeight = 60;  // space for 3 rows of ✚ marks
-    var profGridGap = 12;     // gap between bar chart and profiling grid
+    var xLabelHeight = longestAdjusted * 5 + 40;
+
+    // Legacy: barChartHeight=400, scatterChartHeight = profDataTypes * 28 + 100
+    // svgHeight = barChartHeight + scatterChartHeight + bottomPadding - 100
+    var barChartHeight = 400;
+    var profGridHeight = 60;  // ECharts equivalent of scatterChartHeight
+    var profGridGap = 12;
     var legendHeight = 40;
+    var scatterChartHeight = profDataTypes.length * 28 + 100;
+    var chartH = barChartHeight + scatterChartHeight + xLabelHeight - 100;
+    container.style.height = chartH + "px";
+
+    if (!ctsChart) {
+        ctsChart = echarts.init(container);
+    } else {
+        ctsChart.resize({width: chartW, height: chartH});
+    }
 
     ctsChart.setOption({
         tooltip: [{
@@ -1957,6 +1965,7 @@ document.querySelectorAll('input[name="cts-group"], input[name="cts-count"]').fo
 let plotsChart = null;
 let plotsCliOpts = [];  // cached clinical attribute options
 let plotsData = null;   // last server response
+var molecularProfiles = {{ molecular_profiles | tojson }};
 
 const PlotsState = {
     hAxis: { dataType: 'structural_variant', gene: GENE_0, plotBy: 'variant_vs_no_variant' },
@@ -1971,8 +1980,25 @@ const PLOTS_PALETTE = [
     '#8B0707','#651067','#329262','#5574A6','#3B3EAC',
 ];
 
+// Legacy ref: PlotsTabUtils.tsx:2070-2072 — cnaCategoryOrder
+// Order derived from cnaToAppearance keys ['-2','-1','0','1','2']
+var CNA_CATEGORY_ORDER = [
+    "Deep Deletion", "Shallow Deletion", "Diploid", "Gain", "Amplification",
+];
+
+// Legacy ref: PlotsTabUtils.tsx:2020-2046 — cnaToAppearance stroke colors
+// AlterationColors.ts:23 CNA_COLOR_AMP=#ff0000, :27 CNA_COLOR_HOMDEL=#0000ff
+// Colors.ts:19 DEFAULT_GREY=#bebebe
+var CNA_COLORS = {
+    "Deep Deletion": "#0000ff",
+    "Shallow Deletion": "#2aced4",
+    "Diploid": "#bebebe",
+    "Gain": "#ff8c9f",
+    "Amplification": "#ff0000",
+};
+
 async function initPlotsTab() {
-    // Fetch clinical attribute options
+    // Fetch clinical attribute options (molecular profiles already rendered server-side)
     try {
         plotsCliOpts = await postForm("/results/oncoprint/plots-clinical-options", { study_id: STUDY_ID });
     } catch(e) { console.error(e); }
@@ -1983,6 +2009,28 @@ async function initPlotsTab() {
 
     // Load initial data
     await loadPlotsData();
+}
+
+// Legacy ref: PlotsTab.tsx — vertical axis gene selector includes "Same gene (X)"
+// when the horizontal axis has a gene selected.
+function _buildGeneSelect(prefix, axis, state) {
+    var html = '<div class="cts-heading">Gene</div>';
+    html += '<select id="' + prefix + '-gene" onchange="onPlotsSubChange(\'' + axis + '\')">';
+    // "Same gene" option on vertical axis
+    if (axis === 'v') {
+        var hGene = PlotsState.hAxis.gene;
+        if (hGene) {
+            var isSame = !state.gene || state.gene === hGene;
+            html += '<option value="' + hGene + '"' + (isSame ? ' selected' : '') + '>Same gene (' + hGene + ')</option>';
+        }
+    }
+    GENES.forEach(function(g) {
+        // On vertical axis, skip the gene already shown as "Same gene"
+        if (axis === 'v' && g === PlotsState.hAxis.gene) return;
+        html += '<option value="' + g + '"' + (g === state.gene ? ' selected' : '') + '>' + g + '</option>';
+    });
+    html += '</select>';
+    return html;
 }
 
 function buildAxisSubControls(axis) {
@@ -2000,10 +2048,7 @@ function buildAxisSubControls(axis) {
         html += '<option value="mutated_vs_wildtype">Mutated vs Wild-type</option>';
         html += '<option value="type">Type</option>';
         html += '</select>';
-        html += '<div class="cts-heading">Gene</div>';
-        html += '<select id="' + prefix + '-gene" onchange="onPlotsSubChange(\'' + axis + '\')">';
-        GENES.forEach(g => { html += '<option value="' + g + '"' + (g === state.gene ? ' selected' : '') + '>' + g + '</option>'; });
-        html += '</select>';
+        html += _buildGeneSelect(prefix, axis, state);
         state.plotBy = state.plotBy || 'mutated_vs_wildtype';
     } else if (dt === 'structural_variant') {
         state.dataType = 'structural_variant';
@@ -2011,17 +2056,30 @@ function buildAxisSubControls(axis) {
         html += '<select id="' + prefix + '-plotby" onchange="onPlotsSubChange(\'' + axis + '\')">';
         html += '<option value="variant_vs_no_variant">Variant vs No Variant</option>';
         html += '</select>';
-        html += '<div class="cts-heading">Gene</div>';
-        html += '<select id="' + prefix + '-gene" onchange="onPlotsSubChange(\'' + axis + '\')">';
-        GENES.forEach(g => { html += '<option value="' + g + '"' + (g === state.gene ? ' selected' : '') + '>' + g + '</option>'; });
-        html += '</select>';
+        html += _buildGeneSelect(prefix, axis, state);
         state.plotBy = 'variant_vs_no_variant';
     } else if (dt === 'copy_number') {
         state.dataType = 'copy_number';
-        html += '<div class="cts-heading">Gene</div>';
-        html += '<select id="' + prefix + '-gene" onchange="onPlotsSubChange(\'' + axis + '\')">';
-        GENES.forEach(g => { html += '<option value="' + g + '"' + (g === state.gene ? ' selected' : '') + '>' + g + '</option>'; });
+        // Legacy ref: PlotsTab.tsx:2748-2800 — dataTypeToDataSourceOptions
+        // Loads molecular profiles from API, uses profile.name (line 2794) as label.
+        // PlotsTab.tsx:2757-2767 filters by alteration type + showProfileInAnalysisTab.
+        var cnaProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'COPY_NUMBER_ALTERATION' && p.show_profile_in_analysis_tab;
+        });
+        var cnaProfileName = cnaProfiles.length > 0
+            ? cnaProfiles[0].profile_name
+            : 'Putative copy-number alterations from GISTIC';
+        html += '<div class="cts-heading">Copy Number Profile</div>';
+        html += '<select id="' + prefix + '-cnaprofile"' + (cnaProfiles.length <= 1 ? ' disabled' : '') + '>';
+        if (cnaProfiles.length > 0) {
+            cnaProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+        } else {
+            html += '<option>' + cnaProfileName + '</option>';
+        }
         html += '</select>';
+        html += _buildGeneSelect(prefix, axis, state);
         delete state.plotBy;
     } else if (dt === 'clinical_attribute') {
         state.dataType = 'clinical_attribute';
@@ -2130,26 +2188,67 @@ function renderPlotsBar() {
     var sortBy = document.getElementById("plots-sort").value;
     var horizontal = document.getElementById("plots-horizontal").checked;
 
+    // ── Axis swap — legacy MultipleCategoryBarPlotUtils.ts:makePlotData ──
+    // When horizontalBars=true:
+    //   majorCategory (bar labels / Y-axis) = vertData (CNA values)
+    //   minorCategory (series colors)       = horzData (Cancer Types)
+    // When horizontalBars=false:
+    //   majorCategory (bar labels / X-axis) = horzData (Cancer Types)
+    //   minorCategory (series colors)       = vertData (CNA values)
+    //
+    // Our API returns: categories = h_values, series = v_values
+    // So when horizontal, we need to transpose the cross-tab matrix.
+
+    var rawCats = d.categories;     // h-axis values (majorCategory when vertical)
+    var rawSeries = d.series;       // v-axis values (minorCategory when vertical)
+
+    var cats, series;
+    if (horizontal) {
+        // Transpose: swap major/minor categories
+        // rawSeries names become the new bar labels (categories)
+        // rawCats become the new series names (colors)
+        var newCats = rawSeries.map(function(sr) { return sr.name; });
+        var newSeriesData = rawCats.map(function(cat, ci) {
+            var data = rawSeries.map(function(sr) { return sr.data[ci] || 0; });
+            return { name: cat, data: data };
+        });
+        cats = newCats;
+        rawSeries = newSeriesData;
+    } else {
+        cats = rawCats;
+    }
+
     // Sort categories
-    var catIndices = d.categories.map((c,i) => i);
-    if (sortBy === "alpha") {
-        catIndices.sort((a,b) => d.categories[a].localeCompare(d.categories[b]));
+    // Legacy ref: MultipleCategoryBarPlotUtils.ts:88-105 — sortDataByCategory()
+    // When CNA, use fixed cnaCategoryOrder regardless of user sort selection.
+    var catIndices = cats.map((c,i) => i);
+    var isCNACats = (horizontal ? d.v_data_type : d.h_data_type) === 'copy_number';
+    if (isCNACats) {
+        // Legacy ref: PlotsTabUtils.tsx:2070-2072 — cnaCategoryOrder is always applied
+        catIndices.sort((a,b) => CNA_CATEGORY_ORDER.indexOf(cats[a]) - CNA_CATEGORY_ORDER.indexOf(cats[b]));
+    } else if (sortBy === "alpha") {
+        catIndices.sort((a,b) => cats[a].localeCompare(cats[b]));
     } else {
         catIndices.sort((a,b) => {
-            var sumA = d.series.reduce((s,sr) => s + (sr.data[a]||0), 0);
-            var sumB = d.series.reduce((s,sr) => s + (sr.data[b]||0), 0);
+            var sumA = rawSeries.reduce((s,sr) => s + (sr.data[a]||0), 0);
+            var sumB = rawSeries.reduce((s,sr) => s + (sr.data[b]||0), 0);
             return sumB - sumA;
         });
     }
 
-    var cats = catIndices.map(i => d.categories[i]);
+    cats = catIndices.map(i => cats[i]);
 
-    var series = d.series.map((sr, si) => {
+    // Legacy ref: PlotsTab.tsx:5690 barWidth={20}
+    // MultipleCategoryBarPlot.tsx:423-430 — halved for grouped with >10 minor categories
+    var bw = 20;
+    if (plotType === 'grouped' && rawSeries.length > 10) bw = 10;
+
+    series = rawSeries.map((sr, si) => {
         var data = catIndices.map(i => sr.data[i] || 0);
 
         if (plotType === "pct") {
             data = data.map((val, ci) => {
-                var total = d.series.reduce((s, sr2) => s + (sr2.data[catIndices[ci]]||0), 0);
+                var total = rawSeries.reduce((s, sr2) => s + (sr2.data[catIndices[ci]]||0), 0);
                 return total ? +(val / total * 100).toFixed(1) : 0;
             });
         }
@@ -2158,27 +2257,144 @@ function renderPlotsBar() {
             name: sr.name,
             type: 'bar',
             stack: plotType === 'grouped' ? undefined : 'total',
+            barWidth: bw,
             data: data,
-            itemStyle: { color: PLOTS_PALETTE[si % PLOTS_PALETTE.length] },
+            // Legacy ref: PlotsTabUtils.tsx:2020-2046 — cnaToAppearance colors
+            itemStyle: { color: CNA_COLORS[sr.name] || PLOTS_PALETTE[si % PLOTS_PALETTE.length] },
         };
     });
 
+    // ── Layout sizing — legacy: MultipleCategoryBarPlot.tsx ──────────────
+    //
+    // Constants (MultipleCategoryBarPlot.tsx):
+    //   CATEGORY_LABEL_HORZ_ANGLE = 50
+    //   DEFAULT_LEFT_PADDING  = 25
+    //   DEFAULT_BOTTOM_PADDING = 10
+    //   PLOT_SIDELENGTH = 650  (PlotsTabUtils.tsx:150, passed as chartBase)
+    //   barWidth = 20, domainPadding = 20
+    //
+    // biggestCategoryLabelSize (line 700):
+    //   getTextWidth(longestLabel, fontFamily, fontSize)
+    //   horizontal → raw pixel width
+    //   vertical   → width * |sin(50°)|
+    //
+    // chartWidth (line 161):
+    //   horizontal → chartBase (650)
+    //   vertical   → chartExtent (numBars * barSpacing + domainPadding + 100)
+    //
+    // chartHeight (line 179):
+    //   horizontal → chartExtent
+    //   vertical   → chartBase (650)
+    //
+    // leftPadding (line 646):
+    //   horizontal → biggestCategoryLabelSize
+    //   vertical   → DEFAULT_LEFT_PADDING (25)
+    //
+    // bottomPadding (line 672):
+    //   vertical   → biggestCategoryLabelSize + legendHeight
+    //   horizontal → DEFAULT_BOTTOM_PADDING (10) + legendHeight
+    //
+    // svgWidth  = leftPadding + chartWidth + rightPadding
+    // svgHeight = topPadding + chartHeight + bottomPadding
+
+    var CATEGORY_LABEL_ANGLE = 50;
+    var PLOT_SIDELENGTH = 650;
+
+    // Approximate getTextWidth at fontSize 11: ~6.5px per char
+    var maxLabelPx = Math.max(...cats.map(function(label) {
+        return label.length * 6.5;
+    }));
+
+    // Legacy ref: MultipleCategoryBarPlot.tsx:388-408 — chartExtent
+    //   PLOT_DATA_PADDING_PIXELS = 100 (domainPadding, line 76)
+    //   miscPadding = 100 (line 389)
+    //   stacked: numBars = numCategories
+    //   chartExtent = categoryCoord(numBars-1) + 2*domainPadding + miscPadding
+    //   categoryCoord(i) = i * (barWidth + barSeparation)  (line 752)
+    var DOMAIN_PADDING = 100;
+    var miscPadding = 100;
+    var numBars = cats.length;
+    var barStep = bw + (plotType === 'grouped' ? 0 : 0.2 * bw);  // barWidth + barSeparation
+    var chartExtent = (numBars - 1) * barStep + 2 * DOMAIN_PADDING + miscPadding;
+
+    // Legacy ref: MultipleCategoryBarPlot.tsx:161-177 (chartWidth) and :179-196 (chartHeight)
+    // The bar-axis dimension uses chartExtent (sized to fit bars tightly).
+    // The value-axis dimension uses chartBase (PLOT_SIDELENGTH = 650).
+    // Math.max with axisLabel width ensures room for the axis label text.
+    var axisLabelPx = 100;  // rough estimate for axis label text width
+    var leftPad, bottomPad, chartW, chartH;
+    if (horizontal) {
+        // horizontal: categories on Y-axis (chartExtent), values on X-axis (chartBase)
+        leftPad = maxLabelPx + 10;
+        bottomPad = 40;
+        chartW = Math.max(PLOT_SIDELENGTH, axisLabelPx);
+        chartH = Math.max(chartExtent, axisLabelPx);
+    } else {
+        // vertical: categories on X-axis (chartExtent), values on Y-axis (chartBase)
+        leftPad = 60;
+        bottomPad = maxLabelPx * Math.abs(Math.sin(CATEGORY_LABEL_ANGLE * Math.PI / 180)) + 20;
+        chartW = Math.max(chartExtent, axisLabelPx);
+        chartH = Math.max(PLOT_SIDELENGTH, axisLabelPx);
+    }
+
+    // Resize container to fit content
+    var container = document.getElementById("plots-chart-container");
+    var totalW = leftPad + chartW + 180;   // +180 for right legend + padding
+    var totalH = 20 + chartH + bottomPad;  // +20 for top padding
+    container.style.width = Math.max(totalW, 500) + "px";
+    container.style.height = Math.max(totalH, 400) + "px";
+    plotsChart.resize();
+
+    // ── Axis labels — legacy MultipleCategoryBarPlot.tsx:535-643 ─────────
+    // horzAxis label: horizontal → [countAxisLabel, axisLabelX] : [axisLabelX]
+    // vertAxis label: horizontal → [axisLabelY] : [axisLabelY, countAxisLabel]
+    // countAxisLabel = "# samples" (or "(%)" for percentage)
+    var countLabel = plotType === 'pct' ? '(%)' : '# samples';
+
     var catAxis = {
         type: 'category', data: cats,
-        axisLabel: { rotate: horizontal ? 0 : 45, fontSize: 11, interval: 0 },
+        axisLabel: { rotate: horizontal ? 0 : CATEGORY_LABEL_ANGLE, fontSize: 11, interval: 0 },
     };
     var valAxis = {
         type: 'value',
-        name: d.v_label + '\n# samples',
-        nameLocation: 'middle', nameGap: 50,
+        nameLocation: 'middle',
         axisLabel: { formatter: plotType === 'pct' ? '{value}%' : '{value}' },
     };
-    if (plotType === 'pct') valAxis.name = d.v_label + ' (%)';
+
+    // ── Axis labels — legacy MultipleCategoryBarPlot.tsx:535-643 ─────────
+    // horzAxis (X): horizontal → [countLabel, axisLabelX] : [axisLabelX]
+    // vertAxis (Y): horizontal → [axisLabelY] : [axisLabelY, countLabel]
+    // After transpose, h_label is minor (series), v_label is major (categories)
+    if (horizontal) {
+        // X = value axis showing counts, labeled with minor category axis name
+        valAxis.name = countLabel + '\n' + d.h_label;
+        valAxis.nameGap = 35;
+    } else {
+        // Y = value axis showing counts, labeled with minor category axis name
+        valAxis.name = d.v_label + '\n' + countLabel;
+        valAxis.nameGap = 50;
+    }
+
+    // Legacy ref: MultipleCategoryBarPlot.tsx:201-211 — legendLocation computed
+    // PlotsTab.tsx:414 — LEGEND_TO_BOTTOM_WIDTH_THRESHOLD = 550
+    var legendOnBottom = chartW > 550 || series.length > 15;
+    var legend, gridRight, gridBottom;
+    if (legendOnBottom) {
+        var legendRows = Math.ceil(series.length / 4);  // LEGEND_ITEMS_PER_ROW = 4
+        var legendH = legendRows * 24 + 15;  // 23.7 per row + BOTTOM_LEGEND_PADDING
+        legend = { orient: 'horizontal', bottom: 0, icon: 'rect', itemWidth: 12, itemHeight: 12 };
+        gridRight = 40;
+        gridBottom = bottomPad + legendH;
+    } else {
+        legend = { orient: 'vertical', right: 10, top: 'middle', icon: 'rect', itemWidth: 12, itemHeight: 12 };
+        gridRight = 160;
+        gridBottom = bottomPad;
+    }
 
     var option = {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        legend: { orient: 'vertical', right: 10, top: 'middle', icon: 'rect', itemWidth: 12, itemHeight: 12 },
-        grid: { left: 90, right: 160, top: 20, bottom: 100 },
+        legend: legend,
+        grid: { left: leftPad, right: gridRight, top: 20, bottom: gridBottom },
         xAxis: horizontal ? valAxis : catAxis,
         yAxis: horizontal ? catAxis : valAxis,
         series: series,
@@ -2188,15 +2404,18 @@ function renderPlotsBar() {
         },
     };
 
-    // Build chart title
-    var titleText = (d.h_label || '') + ' vs ' + (d.v_label || '');
-
     plotsChart.setOption(option, true);
 }
 
 function renderPlotsScatter() {
     var d = plotsData;
     var points = d.points.map(p => [p.x, p.y]);
+
+    // Reset container to default size for scatter
+    var container = document.getElementById("plots-chart-container");
+    container.style.width = "100%";
+    container.style.height = "500px";
+    plotsChart.resize();
 
     plotsChart.setOption({
         tooltip: {
@@ -2225,12 +2444,23 @@ function renderPlotsScatter() {
 function renderPlotsBox() {
     var d = plotsData;
 
+    // Legacy MultipleCategoryBarPlot.tsx:672-686: bottomPadding = biggestCategoryLabelSize
+    // (label width * sin(50°)) for vertical bars
+    var maxLabelPx = Math.max(...d.categories.map(function(label) { return label.length * 6.5; }));
+    var boxBottomPad = maxLabelPx * Math.abs(Math.sin(50 * Math.PI / 180)) + 20;
+
+    // Reset container to fit content
+    var container = document.getElementById("plots-chart-container");
+    container.style.width = "100%";
+    container.style.height = (650 + boxBottomPad + 20) + "px";
+    plotsChart.resize();
+
     plotsChart.setOption({
         tooltip: { trigger: 'item' },
-        grid: { left: 90, right: 40, top: 20, bottom: 80 },
+        grid: { left: 90, right: 40, top: 20, bottom: boxBottomPad },
         xAxis: {
             type: 'category', data: d.categories,
-            axisLabel: { rotate: 45, fontSize: 11, interval: 0 },
+            axisLabel: { rotate: 50, fontSize: 11, interval: 0 },
         },
         yAxis: { type: 'value', name: d.v_label, nameLocation: 'middle', nameGap: 50 },
         series: [{
