@@ -51,6 +51,21 @@
 </div>
 <div id="cbio-widget-menu"></div>
 
+<!-- Pie chart hover table popup -->
+<div id="cbio-pie-hover-table">
+    <div class="pht-header">
+        <span class="pht-title"></span>
+        <span class="pht-col-hash">#</span>
+        <span class="pht-col-freq">Freq ▼</span>
+    </div>
+    <div class="pht-rows"></div>
+    <div class="pht-footer">
+        <input class="pht-search" placeholder="Search...">
+        <button class="pht-btn pht-select-all-btn">Select all</button>
+        <button class="pht-btn pht-compare-btn"><span class="pht-vs-badge">VS.</span> Compare</button>
+    </div>
+</div>
+
 <!-- Dependencies -->
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -60,7 +75,7 @@
         studyId: "{{ meta.study_id }}",
         nPatients: {{ meta.n_patients }},
         nSamples: {{ meta.n_samples }},
-        filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] } },
+        filters: { clinicalDataFilters: [], mutationFilter: { genes: [] }, svFilter: { genes: [] }, cnaFilter: { genes: [] } },
         chartsMeta: [],
     };
 

@@ -36,3 +36,4 @@ in-memory DuckDB (`duckdb.connect(":memory:")`).
 | `test_get_clinical_data_table.py` | Pagination, sort direction, search filter |
 | `test_get_data_types_chart.py` | Data type labeling, profiled sample counts |
 | `test_error_handling.py` | Malformed filter JSON, missing tables, NULL columns |
+| `test_get_treatment_counts.py` | Treatment per patient/sample counts, pre/post logic, filter propagation |

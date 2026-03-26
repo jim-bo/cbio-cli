@@ -45,6 +45,8 @@ function filterTableData(attrId, items, query) {
         return items.filter(item => item.gene.toLowerCase().includes(q));
     if (attrId === '_data_types')
         return items.filter(item => item.display_name.toLowerCase().includes(q));
+    if (attrId === '_patient_treatments' || attrId === '_sample_treatments')
+        return items.filter(item => item.treatment.toLowerCase().includes(q));
     // Clinical 'table' widgets
     return items.filter(item => item.value.toLowerCase().includes(q));
 }
@@ -97,10 +99,13 @@ function renderGenomicTableTbody(data) {
 function renderCNATableTbody(data) {
     const tbody = document.getElementById('table-body-_cna_genes');
     if (!tbody) return;
+    const selectedGenes = DashboardState.filters.cnaFilter.genes;
     tbody.innerHTML = '';
     data.forEach(item => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox"><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
+        const isSelected = selectedGenes.includes(item.gene);
+        const tr = document.createElement('tr'); if (isSelected) tr.className = 'selected';
+        tr.innerHTML = `<td style="padding-left: 10px;"><span class="cbio-table-label font-bold" title="${item.gene}">${item.gene}</span></td><td style="text-align: center;"><span class="badge ${item.cna_type === 'AMP' ? 'bg-red-500' : 'bg-blue-500'}" style="color: white; padding: 0 4px; border-radius: 2px; font-size: 9px;">${item.cna_type}</span></td><td class="cbio-table-count"><div class="cbio-table-count-container"><input type="checkbox" class="cbio-table-checkbox" ${isSelected ? 'checked' : ''}><span class="cbio-table-count-value">${item.n_samples.toLocaleString()}</span></div></td><td class="cbio-table-freq">${formatFreq(item.freq, item.n_samples)}</td>`;
+        tr.onclick = (e) => { e.stopPropagation(); toggleCNAFilter(item.gene); };
         tbody.appendChild(tr);
     });
 }
@@ -133,14 +138,38 @@ function renderDataTypesTbody(data) {
     });
 }
 
+function renderPatientTreatmentsTbody(data) {
+    const tbody = document.getElementById('table-body-_patient_treatments');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding-left:10px;">${item.treatment}</td><td style="text-align:right;">${item.count.toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderSampleTreatmentsTbody(data) {
+    const tbody = document.getElementById('table-body-_sample_treatments');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding-left:10px;">${item.treatment}</td><td style="text-align:center;">${item.time}</td><td style="text-align:right;">${item.count.toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
 function reRenderTableTbody(attrId) {
     const data = widgetData[attrId];
     if (!data) return;
     const filtered = filterTableData(attrId, data, tableSearchState[attrId]);
     if (attrId === '_mutated_genes') { renderGenomicTableTbody(filtered); return; }
     if (attrId === '_cna_genes')     { renderCNATableTbody(filtered);     return; }
-    if (attrId === '_sv_genes')      { renderSVTableTbody(filtered);      return; }
-    if (attrId === '_data_types')    { renderDataTypesTbody(filtered);    return; }
+    if (attrId === '_sv_genes')             { renderSVTableTbody(filtered);             return; }
+    if (attrId === '_data_types')           { renderDataTypesTbody(filtered);           return; }
+    if (attrId === '_patient_treatments')   { renderPatientTreatmentsTbody(filtered);   return; }
+    if (attrId === '_sample_treatments')    { renderSampleTreatmentsTbody(filtered);    return; }
     renderTableTbody(attrId, filtered);
 }
 
@@ -148,13 +177,11 @@ function getFiltersForWidget(excludeAttrId) {
     let f = JSON.parse(JSON.stringify(DashboardState.filters));
     if (excludeAttrId === '_mutated_genes') f.mutationFilter.genes = [];
     else if (excludeAttrId === '_sv_genes') f.svFilter.genes = [];
-    else if (excludeAttrId === '_cna_genes') {} // TBD
+    else if (excludeAttrId === '_cna_genes') f.cnaFilter.genes = [];
     else f.clinicalDataFilters = f.clinicalDataFilters.filter(x => x.attributeId !== excludeAttrId);
     return f;
 }
 
-// Age-like column names that should use the dedicated /age (binned histogram) endpoint
-const AGE_COLS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
 
 async function updateTableWidget(attrId) {
     const widget = document.getElementById(`widget-${attrId}`);
@@ -204,18 +231,34 @@ async function updatePieWidget(attrId) {
         widgetData[attrId] = data;
         const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
         const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+        const total = data.reduce((s, d) => s + d.count, 0);
         chart.setOption({
-            tooltip: { trigger: 'item', formatter: '{b}: {c}' },
+            tooltip: { show: false },
             series: [{
                 type: 'pie', radius: '70%', center: ['50%', '50%'],
                 data: data.map(item => ({
                     value: item.count, name: item.value,
                     itemStyle: { color: item.color, opacity: (selectedValues.length === 0 || selectedValues.includes(item.value)) ? 1 : 0.4, borderWidth: selectedValues.includes(item.value) ? 2 : 0, borderColor: '#333' }
                 })),
-                label: { show: false }
+                // Show count label inside slices >= 25% of total (matches legacy threshold)
+                label: {
+                    show: true,
+                    position: 'inside',
+                    formatter: (params) => {
+                        if (params.percent < 25) return '';
+                        const n = params.value;
+                        return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`;
+                    },
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 'bold'
+                },
+                labelLine: { show: false }
             }]
         });
         chart.off('click'); chart.on('click', (p) => toggleFilter(attrId, p.name));
+        chart.off('mouseover'); chart.on('mouseover', (p) => showPieHoverTable(attrId, p.name));
+        chart.off('mouseout'); chart.on('mouseout', () => schedulePieHoverTableHide());
     } catch (err) {}
 }
 
@@ -229,20 +272,12 @@ async function updateBarWidget(attrId) {
         const formData = new FormData();
         formData.append('study_id', DashboardState.studyId);
         formData.append('filter_json', JSON.stringify(DashboardState.filters));
+        formData.append('attribute_id', attrId);
         let bins, naCount = 0;
-        if (AGE_COLS.has(attrId)) {
-            // Use dedicated age endpoint for proper 5-year bucketing
-            const response = await fetch('/study/summary/chart/age?format=json', { method: 'POST', body: formData });
-            const json = await response.json();
-            bins = json.data || [];
-            naCount = json.na_count || 0;
-        } else {
-            // Use clinical endpoint for generic numeric attrs
-            formData.append('attribute_id', attrId);
-            const response = await fetch('/study/summary/chart/clinical?format=json', { method: 'POST', body: formData });
-            const json = await response.json();
-            bins = (json.data || []).map(d => ({ x: d.value, y: d.count }));
-        }
+        const response = await fetch('/study/summary/chart/numeric', { method: 'POST', body: formData });
+        const json = await response.json();
+        bins = json.data || [];
+        naCount = json.na_count || 0;
         widgetData[attrId] = bins;
         if (naEl) {
             naEl.textContent = naCount > 0 ? `NA: ${naCount}` : '';
@@ -410,6 +445,38 @@ async function updateDataTypesWidget() {
     } catch (e) {}
 }
 
+async function updatePatientTreatmentsWidget() {
+    const tbody = document.getElementById('table-body-_patient_treatments');
+    if (!tbody) return;
+    try {
+        const formData = new FormData();
+        formData.append('study_id', DashboardState.studyId);
+        formData.append('filter_json', JSON.stringify(DashboardState.filters));
+        const response = await fetch('/study/summary/chart/patient-treatments?format=json', { method: 'POST', body: formData });
+        const json = await response.json();
+        const data = json.rows || [];
+        widgetData['_patient_treatments'] = data;
+        const filtered = filterTableData('_patient_treatments', data, tableSearchState['_patient_treatments']);
+        renderPatientTreatmentsTbody(filtered);
+    } catch (e) {}
+}
+
+async function updateSampleTreatmentsWidget() {
+    const tbody = document.getElementById('table-body-_sample_treatments');
+    if (!tbody) return;
+    try {
+        const formData = new FormData();
+        formData.append('study_id', DashboardState.studyId);
+        formData.append('filter_json', JSON.stringify(DashboardState.filters));
+        const response = await fetch('/study/summary/chart/sample-treatments?format=json', { method: 'POST', body: formData });
+        const json = await response.json();
+        const data = json.rows || [];
+        widgetData['_sample_treatments'] = data;
+        const filtered = filterTableData('_sample_treatments', data, tableSearchState['_sample_treatments']);
+        renderSampleTreatmentsTbody(filtered);
+    } catch (e) {}
+}
+
 async function updateKMWidget() {
     const chartDom = document.getElementById('chart-_km');
     if (!chartDom) return;
@@ -455,6 +522,13 @@ function toggleSVFilter(gene) {
     broadcastUpdate();
 }
 
+function toggleCNAFilter(gene) {
+    const idx = DashboardState.filters.cnaFilter.genes.indexOf(gene);
+    if (idx > -1) DashboardState.filters.cnaFilter.genes.splice(idx, 1);
+    else DashboardState.filters.cnaFilter.genes.push(gene);
+    broadcastUpdate();
+}
+
 function routeUpdateWidget(chart) {
     const widgetEl = document.getElementById(`widget-${chart.attr_id}`);
     const viewMode = widgetEl ? widgetEl.dataset.viewMode : chart.chart_type;
@@ -469,9 +543,11 @@ function routeUpdateWidget(chart) {
         case '_mutated_genes':  return updateGenomicTableWidget();
         case '_cna_genes':      return updateCNATableWidget();
         case '_sv_genes':       return updateSVTableWidget();
-        case '_scatter':        return updateScatterWidget();
-        case '_km':             return updateKMWidget();
-        case '_data_types':     return updateDataTypesWidget();
+        case '_scatter':             return updateScatterWidget();
+        case '_km':                  return updateKMWidget();
+        case '_data_types':          return updateDataTypesWidget();
+        case '_patient_treatments':  return updatePatientTreatmentsWidget();
+        case '_sample_treatments':   return updateSampleTreatmentsWidget();
     }
 }
 
@@ -655,6 +731,49 @@ function buildWidgetHTML(chart) {
                             <th style="text-align:right;">Freq <i class="fa fa-caret-down"></i></th>
                         </tr></thead>
                         <tbody id="table-body-_data_types"></tbody>
+                    </table>
+                </div>
+                <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                <div class="cbio-resize-handle"></div>
+            </div>`;
+    }
+
+    if (chart_type === '_patient_treatments') {
+        return `
+            <div class="cbio-widget" id="widget-_patient_treatments" ${dataAttrs} data-view-mode="_patient_treatments">
+                <div class="cbio-widget-header">
+                    <div class="cbio-widget-title" id="title-_patient_treatments">Treatment per Patient</div>
+                    ${controls()}
+                </div>
+                <div class="cbio-widget-content">
+                    <table class="cbio-table">
+                        <thead><tr>
+                            <th style="text-align:left;padding-left:10px;">Treatment</th>
+                            <th style="text-align:right;"># Patients</th>
+                        </tr></thead>
+                        <tbody id="table-body-_patient_treatments"></tbody>
+                    </table>
+                </div>
+                <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
+                <div class="cbio-resize-handle"></div>
+            </div>`;
+    }
+
+    if (chart_type === '_sample_treatments') {
+        return `
+            <div class="cbio-widget" id="widget-_sample_treatments" ${dataAttrs} data-view-mode="_sample_treatments">
+                <div class="cbio-widget-header">
+                    <div class="cbio-widget-title" id="title-_sample_treatments">Treatment per Sample (pre/post)</div>
+                    ${controls()}
+                </div>
+                <div class="cbio-widget-content">
+                    <table class="cbio-table">
+                        <thead><tr>
+                            <th style="text-align:left;padding-left:10px;">Treatment</th>
+                            <th style="text-align:center;">Pre/Post</th>
+                            <th style="text-align:right;"># Samples</th>
+                        </tr></thead>
+                        <tbody id="table-body-_sample_treatments"></tbody>
                     </table>
                 </div>
                 <div class="cbio-widget-footer"><input type="text" class="cbio-search-input" placeholder="Search..."></div>
@@ -960,6 +1079,100 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }
     });
+
+    // Pie chart hover table popup
+    (() => {
+        const popup = document.getElementById('cbio-pie-hover-table');
+        let hideTimer = null;
+
+        function cancelHide() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
+
+        popup.addEventListener('mouseenter', cancelHide);
+        popup.addEventListener('mouseleave', () => { hideTimer = setTimeout(() => { popup.style.display = 'none'; }, 150); });
+
+        popup.querySelector('.pht-search').addEventListener('input', function() {
+            const q = this.value.toLowerCase();
+            popup.querySelectorAll('.pht-row').forEach(row => {
+                row.style.display = row.dataset.label.toLowerCase().includes(q) ? '' : 'none';
+            });
+        });
+
+        popup.querySelector('.pht-select-all-btn').addEventListener('click', () => {
+            const attrId = popup.dataset.attrId;
+            if (!attrId) return;
+            const data = widgetData[attrId] || [];
+            const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+            const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+            if (selectedValues.length === data.length) {
+                // Deselect all — remove filter
+                DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId);
+            } else {
+                // Select all
+                DashboardState.filters.clinicalDataFilters = DashboardState.filters.clinicalDataFilters.filter(f => f.attributeId !== attrId);
+                DashboardState.filters.clinicalDataFilters.push({ attributeId: attrId, values: data.map(d => ({ value: d.value })) });
+            }
+            document.dispatchEvent(new CustomEvent('cbio-filter-changed'));
+        });
+
+        window.showPieHoverTable = function(attrId, hoveredName) {
+            cancelHide();
+            const data = widgetData[attrId];
+            if (!data || data.length === 0) return;
+            const widget = document.getElementById(`widget-${attrId}`);
+            if (!widget) return;
+            const rect = widget.getBoundingClientRect();
+
+            const meta = (DashboardState.chartsMeta || []).find(c => c.attr_id === attrId);
+            popup.querySelector('.pht-title').textContent = meta ? meta.display_name : attrId;
+            popup.dataset.attrId = attrId;
+
+            const currentFilter = DashboardState.filters.clinicalDataFilters.find(f => f.attributeId === attrId);
+            const selectedValues = currentFilter ? currentFilter.values.map(v => v.value) : [];
+
+            popup.querySelector('.pht-rows').innerHTML = data.map(item => {
+                const pct = typeof item.pct === 'number' ? item.pct.toFixed(1) + '%' : item.pct;
+                const checked = selectedValues.includes(item.value) ? 'checked' : '';
+                const hovered = item.value === hoveredName ? ' pht-row-hovered' : '';
+                return `<div class="pht-row${hovered}" data-label="${item.value.replace(/"/g,'&quot;')}" data-attr="${attrId}" data-value="${item.value.replace(/"/g,'&quot;')}">
+                    <span class="pht-swatch" style="background:${item.color}"></span>
+                    <span class="pht-label" title="${item.value}">${item.value}</span>
+                    <input type="checkbox" class="pht-checkbox" ${checked}>
+                    <span class="pht-count">${item.count.toLocaleString()}</span>
+                    <span class="pht-pct">${pct}</span>
+                </div>`;
+            }).join('');
+
+            // Wire row checkboxes
+            popup.querySelectorAll('.pht-row').forEach(row => {
+                row.addEventListener('click', (e) => {
+                    if (e.target.type === 'checkbox') return; // handled below
+                    toggleFilter(row.dataset.attr, row.dataset.value);
+                });
+                row.querySelector('.pht-checkbox').addEventListener('change', () => {
+                    toggleFilter(row.dataset.attr, row.dataset.value);
+                });
+            });
+
+            // Position: right of widget, fallback to left
+            popup.style.display = 'block';
+            const pw = popup.offsetWidth;
+            const ph = popup.offsetHeight;
+            let left = rect.right + 8;
+            if (left + pw > window.innerWidth - 8) left = rect.left - pw - 8;
+            let top = rect.top;
+            if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+            popup.style.left = Math.max(8, left) + 'px';
+            popup.style.top = Math.max(8, top) + 'px';
+
+            // Reset search
+            popup.querySelector('.pht-search').value = '';
+            popup.querySelectorAll('.pht-row').forEach(r => r.style.display = '');
+        };
+
+        window.schedulePieHoverTableHide = function() {
+            hideTimer = setTimeout(() => { popup.style.display = 'none'; }, 150);
+        };
+    })();
 
     // Delegated click handler for widget header buttons and menu items
     document.addEventListener('click', e => {

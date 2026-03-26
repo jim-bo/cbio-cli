@@ -506,3 +506,96 @@
 .btn-group-sm > .btn, .btn-sm { padding: 5px 10px; font-size: 12px; line-height: 1.5; border-radius: 3px; }
 .selection-actions .btn { margin-left: 5px; }
 .selection-actions .btn-primary { background-color: #337ab7; border-color: #2e6da4; }
+
+/* ── Pie chart hover table popup ────────────────────────────────────────── */
+
+#cbio-pie-hover-table {
+    display: none;
+    position: fixed;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+    z-index: 1500;
+    width: 300px;
+    font-size: 12px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.pht-header {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-bottom: 2px solid #eee;
+    font-weight: bold;
+    font-size: 13px;
+    color: #333;
+}
+.pht-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pht-col-hash { width: 52px; text-align: right; flex-shrink: 0; }
+.pht-col-freq { width: 64px; text-align: right; flex-shrink: 0; }
+.pht-rows { max-height: 260px; overflow-y: auto; }
+.pht-row {
+    display: flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-bottom: 1px solid #f5f5f5;
+    cursor: pointer;
+}
+.pht-row:hover { background: #f5f5f5; }
+.pht-row-hovered { background: #e8f4fd !important; }
+.pht-swatch {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    margin-right: 6px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+.pht-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #333;
+    margin-right: 4px;
+}
+.pht-checkbox { margin: 0 6px 0 0; flex-shrink: 0; cursor: pointer; }
+.pht-count { width: 48px; text-align: right; flex-shrink: 0; color: #333; }
+.pht-pct { width: 52px; text-align: right; flex-shrink: 0; color: #555; }
+.pht-footer {
+    padding: 6px 8px;
+    border-top: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.pht-search {
+    flex: 1;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 3px 7px;
+    font-size: 11px;
+    color: #555;
+    min-width: 0;
+}
+.pht-search:focus { outline: none; border-color: #66afe9; }
+.pht-btn {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 11px;
+    background: white;
+    cursor: pointer;
+    white-space: nowrap;
+    color: #333;
+    flex-shrink: 0;
+}
+.pht-btn:hover { background: #f0f0f0; }
+.pht-vs-badge {
+    display: inline-block;
+    border: 1px solid #555;
+    padding: 0 2px;
+    font-size: 9px;
+    font-weight: bold;
+    vertical-align: middle;
+    margin-right: 2px;
+}

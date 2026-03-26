@@ -3,11 +3,62 @@ import gzip
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import requests
 import typer
+from tqdm import tqdm
 
+# ---------------------------------------------------------------------------
+# URLs for web fallbacks
+# ---------------------------------------------------------------------------
+_CBIO_GENES_URL = "https://www.cbioportal.org/api/genes?pageSize=100000&projection=SUMMARY"
+_HGNC_TSV_URL = "https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt"
+_GENE_UPDATE_MD_URL = "https://raw.githubusercontent.com/cBioPortal/datahub/master/seedDB/gene-update-list/gene-update.md"
+_GENE_PANELS_JSON_URL = "https://raw.githubusercontent.com/cBioPortal/datahub/master/.circleci/portalinfo/gene-panels.json"
+
+_DATAHUB_CACHE_DIR = Path.home() / ".cbio" / "cache" / "datahub"
+_CACHE_TTL_DAYS = 30
+
+
+def _fetch_datahub_file(url: str, cache_name: str, ttl_days: int = _CACHE_TTL_DAYS) -> Path:
+    """Download a reference file from the web, caching it locally with a TTL.
+
+    Cache location: ~/.cbio/cache/datahub/<cache_name>
+    If the cached file exists and is younger than ttl_days, return it immediately.
+    Otherwise download from url with a tqdm progress bar and write to cache.
+    """
+    _DATAHUB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    dest = _DATAHUB_CACHE_DIR / cache_name
+
+    if dest.exists():
+        age_days = (time.time() - dest.stat().st_mtime) / 86400
+        if age_days < ttl_days:
+            return dest
+
+    typer.echo(f"Downloading {cache_name} from {url}...")
+    response = requests.get(url, stream=True, timeout=120)
+    response.raise_for_status()
+
+    total_size = int(response.headers.get("content-length", 0))
+    with open(dest, "wb") as f, tqdm(
+        desc=cache_name,
+        total=total_size,
+        unit="iB",
+        unit_scale=True,
+        unit_divisor=1024,
+    ) as bar:
+        for chunk in response.iter_content(chunk_size=8192):
+            size = f.write(chunk)
+            bar.update(size)
+
+    return dest
+
+
+# ---------------------------------------------------------------------------
+# OncoTree
+# ---------------------------------------------------------------------------
 
 def retrieve_oncotree_cancer_types():
     """Retrieve cancer types from OncoTree API."""
@@ -69,20 +120,24 @@ def get_oncotree_root(conn, type_of_cancer_id: str):
     return "Other"
 
 
-def load_gene_reference(conn, genes_json_path: Path = None):
-    """Load gene reference table from genes.json (entrezGeneId → hugoGeneSymbol).
+# ---------------------------------------------------------------------------
+# Gene reference (Entrez → Hugo)
+# ---------------------------------------------------------------------------
 
-    Source: $CBIO_DATAHUB/.circleci/portalinfo/genes.json (from cBioPortal/datahub repo).
-    Maps Entrez Gene ID → canonical HGNC Hugo symbol.
-    Required for Pass 1 of Hugo symbol normalization — the most accurate pass because
-    Entrez IDs are stable identifiers even when the Hugo symbol changes.
+def load_gene_reference(conn, genes_json_path: Path = None):
+    """Load gene reference table (entrezGeneId → hugoGeneSymbol).
+
+    Resolution order:
+      1. Explicit genes_json_path argument
+      2. $CBIO_DATAHUB/.circleci/portalinfo/genes.json
+      3. cBioPortal public API (cached 30 days in ~/.cbio/cache/datahub/genes.json)
     """
     if genes_json_path is None:
         datahub = os.getenv("CBIO_DATAHUB")
-        if not datahub:
-            typer.echo("Error: CBIO_DATAHUB env var not set and no path provided.")
-            raise typer.Exit(code=1)
-        genes_json_path = Path(datahub) / ".circleci" / "portalinfo" / "genes.json"
+        if datahub:
+            genes_json_path = Path(datahub) / ".circleci" / "portalinfo" / "genes.json"
+        else:
+            genes_json_path = _fetch_datahub_file(_CBIO_GENES_URL, "genes.json")
 
     if not genes_json_path.exists():
         typer.echo(f"Error: genes.json not found at {genes_json_path}")
@@ -110,20 +165,24 @@ def load_gene_reference(conn, genes_json_path: Path = None):
     typer.echo(f"Successfully loaded {len(rows)} gene reference entries.")
 
 
+# ---------------------------------------------------------------------------
+# Gene symbol updates (~75 renames)
+# ---------------------------------------------------------------------------
+
 def load_gene_symbol_updates(conn, gene_update_md: Path = None):
     """Parse gene-update.md and populate gene_symbol_updates table.
 
-    Source: $CBIO_DATAHUB/seedDB/gene-update-list/gene-update.md
-    Covers genes that were *renamed* (not just aliased) — e.g., C10ORF12 → LCOR.
-    Only ~75 entries; does NOT cover KMT2 family aliases (those need gene_alias).
-    Used as Pass 2 fallback when Entrez ID is wrong or missing.
+    Resolution order:
+      1. Explicit gene_update_md argument
+      2. $CBIO_DATAHUB/seedDB/gene-update-list/gene-update.md
+      3. GitHub raw URL (cached 30 days in ~/.cbio/cache/datahub/gene-update.md)
     """
     if gene_update_md is None:
         datahub = os.getenv("CBIO_DATAHUB")
-        if not datahub:
-            typer.echo("Error: CBIO_DATAHUB env var not set and no path provided.")
-            raise typer.Exit(code=1)
-        gene_update_md = Path(datahub) / "seedDB" / "gene-update-list" / "gene-update.md"
+        if datahub:
+            gene_update_md = Path(datahub) / "seedDB" / "gene-update-list" / "gene-update.md"
+        else:
+            gene_update_md = _fetch_datahub_file(_GENE_UPDATE_MD_URL, "gene-update.md")
 
     if not gene_update_md.exists():
         typer.echo(f"Warning: gene-update.md not found at {gene_update_md}, skipping.")
@@ -161,39 +220,55 @@ def load_gene_symbol_updates(conn, gene_update_md: Path = None):
     typer.echo(f"Loaded {len(rows)} gene symbol update entries.")
 
 
+# ---------------------------------------------------------------------------
+# Gene aliases (~55k rows, from HGNC)
+# ---------------------------------------------------------------------------
+
 def load_gene_aliases(conn, seed_sql_path: Path = None):
-    """Extract gene_alias table from seed SQL and create alias→canonical mapping.
+    """Load gene alias table.
 
-    Solves the problem of studies with Entrez_Gene_Id=0 for genes that have been renamed.
-    For example, msk_chord_2024 ships MLL2/MLL3/MLL/MLL4 with Entrez_Gene_Id=0; these are
-    historical aliases that HGNC renamed to KMT2D/KMT2C/KMT2A/KMT2B respectively.
-    gene_reference won't match them (no valid Entrez ID); gene_symbol_updates doesn't
-    have them either. This table provides the bridge via NCBI alias records.
+    Resolution order:
+      1. Explicit seed_sql_path argument (original seed SQL format, preserved for compat)
+      2. $CBIO_DATAHUB/seedDB/seed-cbioportal_hg19_hg38_*.sql.gz (LFS)
+      3. HGNC official TSV download (cached 30 days in ~/.cbio/cache/datahub/hgnc_complete_set.txt)
 
-    Source: $CBIO_DATAHUB/seedDB/seed-cbioportal_hg19_hg38_*.sql.gz — the gene_alias table.
-    Contains ~55k alias entries. Key mappings:
+    The HGNC TSV is the upstream source that the cBioPortal seed SQL is built from.
+    It provides alias_symbol and prev_symbol columns, which map directly to the
+    gene_alias table. Rows with no entrez_id are skipped.
+
+    Key mappings resolved:
       MLL  → KMT2A (Entrez 4297)
       MLL2 → KMT2D (Entrez 8085)
       MLL3 → KMT2C (Entrez 58508)
       MLL4 → KMT2B (Entrez 9757)
-    Used as Pass 3 fallback after Entrez ID and symbol-update passes.
     """
     if seed_sql_path is None:
         datahub = os.getenv("CBIO_DATAHUB")
-        if not datahub:
-            typer.echo("Error: CBIO_DATAHUB env var not set and no path provided.")
-            raise typer.Exit(code=1)
-        seed_dir = Path(datahub) / "seedDB"
-        candidates = sorted(seed_dir.glob("seed-cbioportal_hg19_hg38_*.sql.gz"))
-        if not candidates:
-            typer.echo(f"Warning: No seed SQL file found in {seed_dir}. Gene alias normalization will be skipped.")
-            return
-        seed_sql_path = candidates[-1]
+        if datahub:
+            seed_dir = Path(datahub) / "seedDB"
+            candidates = sorted(seed_dir.glob("seed-cbioportal_hg19_hg38_*.sql.gz"))
+            if candidates:
+                seed_sql_path = candidates[-1]
 
-    if not seed_sql_path.exists():
-        typer.echo(f"Warning: seed SQL not found at {seed_sql_path}. Gene alias normalization will be skipped.")
-        return
+    conn.execute("DROP TABLE IF EXISTS gene_alias")
+    conn.execute("""
+        CREATE TABLE gene_alias (
+            entrez_gene_id INTEGER,
+            alias_symbol VARCHAR,
+            PRIMARY KEY (entrez_gene_id, alias_symbol)
+        )
+    """)
 
+    if seed_sql_path is not None and seed_sql_path.exists():
+        _load_gene_aliases_from_sql(conn, seed_sql_path)
+    else:
+        if seed_sql_path is not None:
+            typer.echo(f"Warning: seed SQL not found at {seed_sql_path}. Falling back to HGNC TSV.")
+        _load_gene_aliases_from_hgnc(conn)
+
+
+def _load_gene_aliases_from_sql(conn, seed_sql_path: Path):
+    """Load gene aliases from cBioPortal seed SQL (original format)."""
     typer.echo(f"Loading gene aliases from {seed_sql_path.name}...")
     insert_re = re.compile(r"INSERT INTO `gene_alias` VALUES (.+);")
     pair_re = re.compile(r"\((\d+),'([^']+)'\)")
@@ -207,26 +282,73 @@ def load_gene_aliases(conn, seed_sql_path: Path = None):
                 for entrez_str, alias in pair_re.findall(m.group(1)):
                     alias_rows.append((int(entrez_str), alias))
 
-    conn.execute("DROP TABLE IF EXISTS gene_alias")
-    conn.execute("""
-        CREATE TABLE gene_alias (
-            entrez_gene_id INTEGER,
-            alias_symbol VARCHAR,
-            PRIMARY KEY (entrez_gene_id, alias_symbol)
-        )
-    """)
     conn.executemany("INSERT OR REPLACE INTO gene_alias VALUES (?, ?)", alias_rows)
     typer.echo(f"Loaded {len(alias_rows)} gene alias entries.")
 
 
+def _load_gene_aliases_from_hgnc(conn):
+    """Load gene aliases from HGNC official TSV download."""
+    hgnc_path = _fetch_datahub_file(_HGNC_TSV_URL, "hgnc_complete_set.txt")
+    typer.echo("Parsing HGNC gene aliases...")
+
+    alias_rows: list[tuple[int, str]] = []
+
+    with open(hgnc_path, "r", encoding="utf-8") as f:
+        header = f.readline().rstrip("\n").split("\t")
+        try:
+            entrez_col = header.index("entrez_id")
+            alias_col = header.index("alias_symbol")
+            prev_col = header.index("prev_symbol")
+        except ValueError as e:
+            raise RuntimeError(f"HGNC TSV missing expected column: {e}") from e
+
+        for line in f:
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) <= max(entrez_col, alias_col, prev_col):
+                continue
+            entrez_raw = fields[entrez_col].strip()
+            if not entrez_raw:
+                continue
+            try:
+                entrez_id = int(entrez_raw)
+            except ValueError:
+                continue
+
+            # alias_symbol: pipe-separated list, e.g. "MLL|MLL1A"
+            for symbol in fields[alias_col].split("|"):
+                symbol = symbol.strip()
+                if symbol:
+                    alias_rows.append((entrez_id, symbol))
+
+            # prev_symbol: pipe-separated list of historical names
+            for symbol in fields[prev_col].split("|"):
+                symbol = symbol.strip()
+                if symbol:
+                    alias_rows.append((entrez_id, symbol))
+
+    if alias_rows:
+        conn.executemany("INSERT OR REPLACE INTO gene_alias VALUES (?, ?)", alias_rows)
+    typer.echo(f"Loaded {len(alias_rows)} gene alias entries from HGNC.")
+
+
+# ---------------------------------------------------------------------------
+# Gene panel definitions
+# ---------------------------------------------------------------------------
+
 def load_gene_panel_definitions(conn, json_path: Path = None):
-    """Load gene panel definitions from gene-panels.json into DuckDB."""
+    """Load gene panel definitions from gene-panels.json.
+
+    Resolution order:
+      1. Explicit json_path argument
+      2. $CBIO_DATAHUB/.circleci/portalinfo/gene-panels.json
+      3. GitHub raw URL (cached 30 days in ~/.cbio/cache/datahub/gene-panels.json)
+    """
     if json_path is None:
         datahub = os.getenv("CBIO_DATAHUB")
-        if not datahub:
-            typer.echo("Error: CBIO_DATAHUB env var not set and no --json-path provided.")
-            raise typer.Exit(code=1)
-        json_path = Path(datahub) / ".circleci" / "portalinfo" / "gene-panels.json"
+        if datahub:
+            json_path = Path(datahub) / ".circleci" / "portalinfo" / "gene-panels.json"
+        else:
+            json_path = _fetch_datahub_file(_GENE_PANELS_JSON_URL, "gene-panels.json")
 
     if not json_path.exists():
         typer.echo(f"Error: Gene panels JSON not found at {json_path}")
@@ -260,27 +382,28 @@ def load_gene_panel_definitions(conn, json_path: Path = None):
     typer.echo(f"Successfully loaded {panel_count} gene panels ({gene_count} gene entries).")
 
 
+# ---------------------------------------------------------------------------
+# Auto-load on study import
+# ---------------------------------------------------------------------------
+
 def ensure_gene_reference(conn):
-    """Auto-load gene reference tables when CBIO_DATAHUB is set, if not already present.
+    """Auto-load gene reference tables if not already present.
 
-    Called before every study load (db add, db load-lfs, db load-all) to ensure
-    normalize_hugo_symbols() has the data it needs. Each table is checked independently
-    so adding gene_alias later doesn't require re-loading gene_reference.
+    Called before every study load to ensure normalize_hugo_symbols() has the
+    data it needs. Uses web fallbacks when CBIO_DATAHUB is not set, so this
+    works from a clean checkout with only internet access.
 
-    IMPORTANT: If CBIO_DATAHUB is not set, normalization is silently skipped. Gene counts
-    will then be wrong for studies using legacy aliases (e.g. KMT2 family genes).
+    Each table is checked independently so adding gene_alias later doesn't
+    require re-loading gene_reference.
     """
-    datahub = os.getenv("CBIO_DATAHUB")
-    if not datahub:
-        return
     existing = {t[0] for t in conn.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema='main'"
     ).fetchall()}
     try:
         if "gene_reference" not in existing:
-            load_gene_reference(conn, Path(datahub) / ".circleci" / "portalinfo" / "genes.json")
+            load_gene_reference(conn)
         if "gene_symbol_updates" not in existing:
-            load_gene_symbol_updates(conn, Path(datahub) / "seedDB" / "gene-update-list" / "gene-update.md")
+            load_gene_symbol_updates(conn)
         if "gene_alias" not in existing:
             load_gene_aliases(conn)
     except SystemExit:
