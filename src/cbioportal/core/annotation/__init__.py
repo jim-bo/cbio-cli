@@ -122,6 +122,8 @@ def _compute_cbp_driver(conn, study_id: str) -> None:
           * moalmanac_score_bin IN ('FDA-Approved', 'Guideline', 'Clinical evidence')
             — mutation has clinical actionability evidence
           * civic_evidence_level IN ('A', 'B') — strong clinical evidence
+          * am_class = 'pathogenic' AND vep_impact IN ('HIGH', 'MODERATE')
+            — AlphaMissense pathogenic + functional impact
       - Putative_Passenger otherwise
 
     NOTE: This is a heuristic approximation. The legacy cBioPortal uses OncoKB's
@@ -173,6 +175,9 @@ def _compute_cbp_driver(conn, study_id: str) -> None:
             WHEN a.moalmanac_score_bin IN ('FDA-Approved', 'Guideline', 'Clinical evidence')
                 THEN 'Putative_Driver'
             WHEN a.civic_evidence_level IN ('A', 'B')
+                THEN 'Putative_Driver'
+            WHEN a.am_class = 'pathogenic'
+                AND a.vep_impact IN ('HIGH', 'MODERATE')
                 THEN 'Putative_Driver'
             ELSE 'Putative_Passenger'
         END

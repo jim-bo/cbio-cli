@@ -21,12 +21,12 @@ MAF_EXPORT_COLS = [
 # vibe-vep appends vibe.* columns by default
 # Mapping from vibe-vep output column → our schema column
 VEP_COLS = {
-    "vibe.consequence":          "vep_consequence",
-    "vibe.transcript_id":        "vep_transcript_id",
-    # am_score, am_class, hotspot_type appear when those plugins are enabled
-    "vibe.am_score":             "am_score",
-    "vibe.am_class":             "am_class",
-    "vibe.hotspot_type":         "hotspot_type",
+    "vibe.consequence":              "vep_consequence",
+    "vibe.transcript_id":            "vep_transcript_id",
+    # AlphaMissense and hotspot columns appear when those plugins are enabled
+    "vibe.alphamissense.score":      "am_score",
+    "vibe.alphamissense.class":      "am_class",
+    "vibe.hotspot_type":             "hotspot_type",
     # IMPACT not in vibe-vep output; derive from consequence if needed
 }
 
