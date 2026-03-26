@@ -126,6 +126,32 @@ def conn():
         ('test_study', 'BRAF', 'S4', 175.3)
     """)
 
+    # -- protein table
+    c.execute("""
+        CREATE TABLE "test_study_protein" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, protein_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_protein" VALUES
+        ('test_study', 'KRAS', 'S1', 0.85),
+        ('test_study', 'KRAS', 'S2', -0.32),
+        ('test_study', 'KRAS', 'S3', 1.21)
+    """)
+
+    # -- methylation table
+    c.execute("""
+        CREATE TABLE "test_study_methylation" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, methylation_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_methylation" VALUES
+        ('test_study', 'KRAS', 'S1', 0.12),
+        ('test_study', 'KRAS', 'S2', 0.88),
+        ('test_study', 'KRAS', 'S4', 0.45)
+    """)
+
     yield c
     c.close()
 
@@ -583,3 +609,58 @@ class TestExpressionAxis:
             {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
         )
         assert result["total_samples"] == 0
+
+
+# ── Protein Level Axis ─────────────────────────────────────────────────
+
+
+class TestProteinAxis:
+    def test_protein_returns_numeric(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "protein_level", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["plot_type"] == "box"
+
+    def test_protein_values(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "protein_level", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        raw = {}
+        for cat, pts in result["box_raw_data"].items():
+            for pt in pts:
+                raw[pt["sample_id"]] = pt["value"]
+        assert abs(raw["S1"] - 0.85) < 0.01
+        assert abs(raw["S2"] - (-0.32)) < 0.01
+        assert abs(raw["S3"] - 1.21) < 0.01
+
+
+# ── DNA Methylation Axis ──────────────────────────────────────────────
+
+
+class TestMethylationAxis:
+    def test_methylation_returns_numeric(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "methylation", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["plot_type"] == "box"
+
+    def test_methylation_vs_expression_scatter(self, conn):
+        """Methylation vs expression → scatter plot (common use case)."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "methylation", "gene": "KRAS"},
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+        )
+        assert result["plot_type"] == "scatter"
+        # Common samples: S1 and S2 (have both KRAS methylation and expression)
+        assert result["total_samples"] == 2

@@ -344,6 +344,10 @@ def _get_axis_values(conn, study_id: str, config: dict) -> dict:
         return _get_cna_axis(conn, study_id, config)
     elif data_type == "mrna_expression":
         return _get_expression_axis(conn, study_id, config)
+    elif data_type == "protein_level":
+        return _get_protein_axis(conn, study_id, config)
+    elif data_type == "methylation":
+        return _get_methylation_axis(conn, study_id, config)
     else:
         return {"values": {}, "is_numeric": False, "label": "Unknown"}
 
@@ -644,6 +648,60 @@ def _get_expression_axis(conn, study_id: str, config: dict) -> dict:
     except Exception:
         pass
 
+    return {"values": values, "is_numeric": True, "label": f"{gene}: {profile_name}"}
+
+
+def _get_protein_axis(conn, study_id: str, config: dict) -> dict:
+    """Get protein level values per sample for a gene."""
+    gene = config.get("gene", "")
+    try:
+        rows = conn.execute(
+            f'SELECT sample_id, protein_value '
+            f'FROM "{study_id}_protein" WHERE hugo_symbol = ?',
+            [gene],
+        ).fetchall()
+    except Exception:
+        return {"values": {}, "is_numeric": True, "label": f"{gene}: Protein Level"}
+
+    values = {sid: float(val) for sid, val in rows if val is not None}
+    profile_name = "Protein Level"
+    try:
+        row = conn.execute(
+            "SELECT profile_name FROM molecular_profiles "
+            "WHERE study_id = ? AND genetic_alteration_type = 'PROTEIN_LEVEL' LIMIT 1",
+            [study_id],
+        ).fetchone()
+        if row and row[0]:
+            profile_name = row[0]
+    except Exception:
+        pass
+    return {"values": values, "is_numeric": True, "label": f"{gene}: {profile_name}"}
+
+
+def _get_methylation_axis(conn, study_id: str, config: dict) -> dict:
+    """Get DNA methylation values per sample for a gene."""
+    gene = config.get("gene", "")
+    try:
+        rows = conn.execute(
+            f'SELECT sample_id, methylation_value '
+            f'FROM "{study_id}_methylation" WHERE hugo_symbol = ?',
+            [gene],
+        ).fetchall()
+    except Exception:
+        return {"values": {}, "is_numeric": True, "label": f"{gene}: DNA Methylation"}
+
+    values = {sid: float(val) for sid, val in rows if val is not None}
+    profile_name = "DNA Methylation"
+    try:
+        row = conn.execute(
+            "SELECT profile_name FROM molecular_profiles "
+            "WHERE study_id = ? AND genetic_alteration_type = 'METHYLATION' LIMIT 1",
+            [study_id],
+        ).fetchone()
+        if row and row[0]:
+            profile_name = row[0]
+    except Exception:
+        pass
     return {"values": values, "is_numeric": True, "label": f"{gene}: {profile_name}"}
 
 

@@ -76,6 +76,109 @@ class Monitor:
         }
 
 
+def _load_wide_matrix(conn, study_id: str, filepath: Path, table_name: str, value_col: str, *, filter_zeros: bool = False):
+    """Load a gene×sample wide matrix (CNA, expression, protein, methylation) into long format.
+
+    Args:
+        filter_zeros: If True, exclude rows where value == 0 (used for CNA to save space).
+    """
+    _NON_SAMPLE = {"Hugo_Symbol", "Entrez_Gene_Id", "Cytoband", "Composite.Element.REF"}
+    with open(filepath) as f:
+        for line in f:
+            if not line.startswith("#"):
+                header_cols = line.strip().split("\t")
+                break
+    hugo_col = header_cols.index("Hugo_Symbol") if "Hugo_Symbol" in header_cols else None
+    sample_cols = [c for c in header_cols if c not in _NON_SAMPLE]
+    n_samples = len(sample_cols)
+
+    conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+    if n_samples <= 5_000:
+        exclude = [c for c in header_cols if c in _NON_SAMPLE]
+        if len(exclude) > 1:
+            exclude_clause = f"({', '.join(exclude)})"
+        elif exclude:
+            exclude_clause = exclude[0]
+        else:
+            exclude_clause = None
+        if hugo_col is not None:
+            hugo_select = "Hugo_Symbol as hugo_symbol,"
+            join_clause = ""
+        else:
+            hugo_select = "gr.hugo_gene_symbol as hugo_symbol,"
+            join_clause = "JOIN gene_reference gr ON TRY_CAST(unpivoted.Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id"
+        on_clause = f"ON COLUMNS(* EXCLUDE {exclude_clause})" if exclude_clause else "ON COLUMNS(*)"
+        where = f"WHERE {value_col} IS NOT NULL" + (f" AND {value_col} != 0" if filter_zeros else "")
+        conn.execute(f"""
+            CREATE TABLE {table_name} AS
+            SELECT * FROM (
+                SELECT
+                    '{study_id}' as study_id,
+                    {hugo_select}
+                    sample_id,
+                    TRY_CAST({value_col} AS DOUBLE) as {value_col}
+                FROM (
+                    UNPIVOT (SELECT * FROM read_csv('{filepath}', delim='\\t', header=True, all_varchar=True, ignore_errors=True, null_padding=True))
+                    {on_clause}
+                    INTO NAME sample_id VALUE {value_col}
+                ) unpivoted
+                {join_clause}
+            ) {where}
+        """)
+    else:
+        conn.execute(f"""
+            CREATE TABLE {table_name} (
+                study_id    VARCHAR NOT NULL,
+                hugo_symbol VARCHAR,
+                sample_id   VARCHAR NOT NULL,
+                {value_col} DOUBLE NOT NULL
+            )
+        """)
+        entrez_col = header_cols.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in header_cols else None
+        sample_indices = [(i, c) for i, c in enumerate(header_cols) if c not in _NON_SAMPLE]
+        entrez_to_hugo: dict[int, str] = {}
+        if hugo_col is None and entrez_col is not None:
+            entrez_to_hugo = {
+                r[0]: r[1]
+                for r in conn.execute("SELECT entrez_gene_id, hugo_gene_symbol FROM gene_reference").fetchall()
+                if r[1]
+            }
+        batch: list[tuple] = []
+        with open(filepath) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if parts[0] == header_cols[0]:
+                    continue
+                if hugo_col is not None:
+                    hugo = parts[hugo_col]
+                elif entrez_col is not None:
+                    try:
+                        hugo = entrez_to_hugo.get(int(parts[entrez_col]), "")
+                    except (ValueError, IndexError):
+                        hugo = ""
+                else:
+                    hugo = ""
+                for idx, sample_id in sample_indices:
+                    try:
+                        raw = parts[idx].strip()
+                        if raw in ("", "NA", "null", "NULL"):
+                            continue
+                        val = float(raw)
+                    except (ValueError, IndexError):
+                        continue
+                    if filter_zeros and val == 0:
+                        continue
+                    batch.append((study_id, hugo, sample_id, val))
+                if len(batch) >= 10_000:
+                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", batch)
+                    batch.clear()
+        if batch:
+            conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", batch)
+
+
 def load_study(
     conn,
     study_path: Path,
@@ -99,6 +202,8 @@ def load_study(
         + list(study_path.glob("data_expression_*.txt"))
         + list(study_path.glob("data_rna_seq_*.txt"))
     )
+    protein_files = list(study_path.glob("data_rppa*.txt")) + list(study_path.glob("data_protein_quantification*.txt"))
+    methylation_files = list(study_path.glob("data_methylation*.txt"))
 
     if not mutation_file.exists():
         variants = list(study_path.glob("data_mutations*.txt"))
@@ -245,104 +350,18 @@ def load_study(
             normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
         if load_expression and expression_files:
-            # Expression data uses the same wide-matrix format as CNA:
-            # Hugo_Symbol  Entrez_Gene_Id  SAMPLE_1  SAMPLE_2 ...
-            # Values are continuous (RSEM, TPM, FPKM, etc.) — keep all non-null.
-            expr_file = expression_files[0]  # Use the first available expression file
-            table_name = f'"{raw_study_id}_expression"'
-            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
-
-            _NON_SAMPLE_COLS_EXPR = {"Hugo_Symbol", "Entrez_Gene_Id", "Cytoband", "Composite.Element.REF"}
-            with open(expr_file) as _f:
-                for _line in _f:
-                    if not _line.startswith("#"):
-                        _header_cols_expr = _line.strip().split("\t")
-                        break
-            _hugo_col_expr = _header_cols_expr.index("Hugo_Symbol") if "Hugo_Symbol" in _header_cols_expr else None
-            _sample_cols_expr = [c for c in _header_cols_expr if c not in _NON_SAMPLE_COLS_EXPR]
-            _n_samples_expr = len(_sample_cols_expr)
-
-            if _n_samples_expr <= 5_000:
-                _exclude_expr = [c for c in _header_cols_expr if c in _NON_SAMPLE_COLS_EXPR]
-                if len(_exclude_expr) > 1:
-                    _exclude_clause_expr = f"({', '.join(_exclude_expr)})"
-                elif _exclude_expr:
-                    _exclude_clause_expr = _exclude_expr[0]
-                else:
-                    _exclude_clause_expr = None
-                _entrez_col_expr = _header_cols_expr.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in _header_cols_expr else None
-                if _hugo_col_expr is not None:
-                    _hugo_select_expr = "Hugo_Symbol as hugo_symbol,"
-                    _join_clause_expr = ""
-                else:
-                    _hugo_select_expr = "gr.hugo_gene_symbol as hugo_symbol,"
-                    _join_clause_expr = "JOIN gene_reference gr ON TRY_CAST(unpivoted.Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id"
-                _on_clause_expr = f"ON COLUMNS(* EXCLUDE {_exclude_clause_expr})" if _exclude_clause_expr else "ON COLUMNS(*)"
-                conn.execute(f"""
-                    CREATE TABLE {table_name} AS
-                    SELECT * FROM (
-                        SELECT
-                            '{raw_study_id}' as study_id,
-                            {_hugo_select_expr}
-                            sample_id,
-                            TRY_CAST(expression_value AS DOUBLE) as expression_value
-                        FROM (
-                            UNPIVOT (SELECT * FROM read_csv('{expr_file}', delim='\\t', header=True, all_varchar=True, ignore_errors=True, null_padding=True))
-                            {_on_clause_expr}
-                            INTO NAME sample_id VALUE expression_value
-                        ) unpivoted
-                        {_join_clause_expr}
-                    ) WHERE expression_value IS NOT NULL
-                """)
-            else:
-                conn.execute(f"""
-                    CREATE TABLE {table_name} (
-                        study_id         VARCHAR NOT NULL,
-                        hugo_symbol      VARCHAR,
-                        sample_id        VARCHAR NOT NULL,
-                        expression_value DOUBLE NOT NULL
-                    )
-                """)
-                _entrez_col_expr = _header_cols_expr.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in _header_cols_expr else None
-                _sample_indices_expr = [(i, c) for i, c in enumerate(_header_cols_expr) if c not in _NON_SAMPLE_COLS_EXPR]
-                _entrez_to_hugo_expr: dict[int, str] = {}
-                if _hugo_col_expr is None and _entrez_col_expr is not None:
-                    _entrez_to_hugo_expr = {
-                        r[0]: r[1]
-                        for r in conn.execute("SELECT entrez_gene_id, hugo_gene_symbol FROM gene_reference").fetchall()
-                        if r[1]
-                    }
-                _batch_expr: list[tuple] = []
-                with open(expr_file) as _f:
-                    for _line in _f:
-                        if _line.startswith("#"):
-                            continue
-                        _parts = _line.rstrip("\n").split("\t")
-                        if _parts[0] == _header_cols_expr[0]:
-                            continue
-                        if _hugo_col_expr is not None:
-                            _hugo = _parts[_hugo_col_expr]
-                        elif _entrez_col_expr is not None:
-                            try:
-                                _hugo = _entrez_to_hugo_expr.get(int(_parts[_entrez_col_expr]), "")
-                            except (ValueError, IndexError):
-                                _hugo = ""
-                        else:
-                            _hugo = ""
-                        for _idx, _sample_id in _sample_indices_expr:
-                            try:
-                                _raw = _parts[_idx].strip()
-                                if _raw in ("", "NA", "null", "NULL"):
-                                    continue
-                                _val = float(_raw)
-                            except (ValueError, IndexError):
-                                continue
-                            _batch_expr.append((raw_study_id, _hugo, _sample_id, _val))
-                        if len(_batch_expr) >= 10_000:
-                            conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch_expr)
-                            _batch_expr.clear()
-                if _batch_expr:
-                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch_expr)
+            _load_wide_matrix(conn, raw_study_id, expression_files[0],
+                              f'"{raw_study_id}_expression"', "expression_value")
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
+        if load_expression and protein_files:
+            _load_wide_matrix(conn, raw_study_id, protein_files[0],
+                              f'"{raw_study_id}_protein"', "protein_value")
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
+        if load_expression and methylation_files:
+            _load_wide_matrix(conn, raw_study_id, methylation_files[0],
+                              f'"{raw_study_id}_methylation"', "methylation_value")
             normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
         if load_timeline and timeline_files:

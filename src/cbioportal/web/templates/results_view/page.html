@@ -715,6 +715,8 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               <option value="mutation">Mutation</option>
               <option value="copy_number">Copy Number</option>
               <option value="mrna_expression" class="plots-opt-mrna" style="display:none;">mRNA Expression</option>
+              <option value="protein_level" class="plots-opt-protein" style="display:none;">Protein Level</option>
+              <option value="methylation" class="plots-opt-methylation" style="display:none;">DNA Methylation</option>
               <option value="clinical_attribute">Clinical Attribute</option>
             </select>
             <div id="plots-h-sub"></div>
@@ -732,6 +734,8 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               <option value="mutation">Mutation</option>
               <option value="copy_number">Copy Number</option>
               <option value="mrna_expression" class="plots-opt-mrna" style="display:none;">mRNA Expression</option>
+              <option value="protein_level" class="plots-opt-protein" style="display:none;">Protein Level</option>
+              <option value="methylation" class="plots-opt-methylation" style="display:none;">DNA Methylation</option>
             </select>
             <div id="plots-v-sub"></div>
           </div>
@@ -2060,12 +2064,17 @@ async function initPlotsTab() {
         plotsCliOpts = await postForm("/results/oncoprint/plots-clinical-options", { study_id: STUDY_ID });
     } catch(e) { console.error(e); }
 
-    // Show mRNA Expression option if study has expression profiles
-    var hasMrna = (molecularProfiles || []).some(function(p) {
-        return p.genetic_alteration_type === 'MRNA_EXPRESSION';
-    });
-    if (hasMrna) {
+    // Show molecular data type options based on available profiles
+    var profileTypes = {};
+    (molecularProfiles || []).forEach(function(p) { profileTypes[p.genetic_alteration_type] = true; });
+    if (profileTypes['MRNA_EXPRESSION']) {
         document.querySelectorAll('.plots-opt-mrna').forEach(function(el) { el.style.display = ''; });
+    }
+    if (profileTypes['PROTEIN_LEVEL']) {
+        document.querySelectorAll('.plots-opt-protein').forEach(function(el) { el.style.display = ''; });
+    }
+    if (profileTypes['METHYLATION']) {
+        document.querySelectorAll('.plots-opt-methylation').forEach(function(el) { el.style.display = ''; });
     }
 
     // Populate color menu dropdowns
@@ -2168,6 +2177,36 @@ function buildAxisSubControls(axis) {
             html += '<div class="cts-heading">mRNA Profile</div>';
             html += '<select id="' + prefix + '-mrnaprofile"' + (mrnaProfiles.length <= 1 ? ' disabled' : '') + '>';
             mrnaProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+            html += '</select>';
+        }
+        html += _buildGeneSelect(prefix, axis, state);
+        delete state.plotBy;
+    } else if (dt === 'protein_level') {
+        state.dataType = 'protein_level';
+        var proteinProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'PROTEIN_LEVEL';
+        });
+        if (proteinProfiles.length > 0) {
+            html += '<div class="cts-heading">Protein Profile</div>';
+            html += '<select id="' + prefix + '-protprofile"' + (proteinProfiles.length <= 1 ? ' disabled' : '') + '>';
+            proteinProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+            html += '</select>';
+        }
+        html += _buildGeneSelect(prefix, axis, state);
+        delete state.plotBy;
+    } else if (dt === 'methylation') {
+        state.dataType = 'methylation';
+        var methProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'METHYLATION';
+        });
+        if (methProfiles.length > 0) {
+            html += '<div class="cts-heading">Methylation Profile</div>';
+            html += '<select id="' + prefix + '-methprofile"' + (methProfiles.length <= 1 ? ' disabled' : '') + '>';
+            methProfiles.forEach(function(p) {
                 html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
             });
             html += '</select>';

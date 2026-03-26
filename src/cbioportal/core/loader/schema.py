@@ -88,6 +88,8 @@ def create_global_views(conn):
         "sv": "sv",
         "cna": "cna",
         "expression": "expression",
+        "protein": "protein",
+        "methylation": "methylation",
     }
 
     # Dynamically find timeline suffixes
