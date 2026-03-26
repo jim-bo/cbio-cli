@@ -154,15 +154,15 @@ class TestComputeCbpDriver:
         ).fetchone()
         assert row[0] == "Putative_Passenger"
 
-    def test_alphamissense_pathogenic_is_driver(self, conn):
-        """AlphaMissense pathogenic + MODERATE/HIGH impact → Driver."""
+    def test_alphamissense_alone_not_driver(self, conn):
+        """AlphaMissense pathogenic alone should NOT trigger Driver (too liberal)."""
         _compute_cbp_driver(conn, "test_study")
-        # S6: PIK3CA with am_class=pathogenic, vep_impact=MODERATE → Driver
+        # S6: PIK3CA with am_class=pathogenic, vep_impact=MODERATE but no other signal
         row = conn.execute(
             'SELECT cbp_driver FROM "test_study_mutations" '
             "WHERE Tumor_Sample_Barcode = 'S6'"
         ).fetchone()
-        assert row[0] == "Putative_Driver"
+        assert row[0] == "Putative_Passenger"
 
     def test_no_signals_is_passenger(self, conn):
         """Mutations with no driver signals → Passenger."""

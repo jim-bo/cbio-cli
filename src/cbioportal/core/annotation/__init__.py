@@ -122,9 +122,12 @@ def _compute_cbp_driver(conn, study_id: str) -> None:
           * moalmanac_score_bin IN ('FDA-Approved', 'Guideline', 'Clinical evidence')
             — mutation has clinical actionability evidence
           * civic_evidence_level IN ('A', 'B') — strong clinical evidence
-          * am_class = 'pathogenic' AND vep_impact IN ('HIGH', 'MODERATE')
-            — AlphaMissense pathogenic + functional impact
       - Putative_Passenger otherwise
+
+    NOTE: AlphaMissense (am_class) is available in annotations but NOT used here —
+    it predicts structural protein damage, not cancer driver status, and over-calls
+    drivers (~33% vs expected ~5%). It can be added as a supplementary signal once
+    gated by a cancer gene list or OncoKB.
 
     NOTE: This is a heuristic approximation. The legacy cBioPortal uses OncoKB's
     oncogenic field as the primary driver signal. When OncoKB integration is added
@@ -175,9 +178,6 @@ def _compute_cbp_driver(conn, study_id: str) -> None:
             WHEN a.moalmanac_score_bin IN ('FDA-Approved', 'Guideline', 'Clinical evidence')
                 THEN 'Putative_Driver'
             WHEN a.civic_evidence_level IN ('A', 'B')
-                THEN 'Putative_Driver'
-            WHEN a.am_class = 'pathogenic'
-                AND a.vep_impact IN ('HIGH', 'MODERATE')
                 THEN 'Putative_Driver'
             ELSE 'Putative_Passenger'
         END
