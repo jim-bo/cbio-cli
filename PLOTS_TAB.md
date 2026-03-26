@@ -137,17 +137,26 @@ Conditional example links (`PlotsTab.tsx:6378-6380`):
 - Form group spacing: margin-bottom 5px (`styles.scss:64-66`)
 
 > **Verification (2026-03-26):** Section 1 reviewed against our implementation in
-> `templates/results_view/page.html` (lines 695–2482) and `plots_repository.py`.
-> All form controls for implemented data types are present and correct:
-> - H/V axis panels with Data Type dropdown (4 implemented types), Gene selector, CNA profile selector
-> - Mutation "Plot by" (mutated_vs_wildtype, type) and SV "Plot by" (variant_vs_no_variant) match backend
-> - Swap Axes button works correctly
-> - Plot Options: stacked/grouped/pct bar types, alpha/count sort, horizontal bars toggle
-> - Quick Plots pills adapted for our available data (Mut# vs Dx, FGA vs Dx, Mut# vs FGA)
+> `templates/results_view/page.html` and `plots_repository.py`.
 >
-> Known gaps already tracked in Section 12: DriverVsVUS, VAF, VariantType count-by modes;
-> log scale checkbox; coloring menu; Table plot type; regression line / connect samples toggles;
-> "Same gene" option in vertical gene selector. No action needed — these depend on unimplemented data types or features.
+> **Implemented:**
+> - H/V axis panels with Data Type dropdown (4 types), Gene selector, CNA profile selector
+> - Mutation "Plot by" (mutated_vs_wildtype, type) and SV "Plot by" (variant_vs_no_variant)
+> - Swap Axes button
+> - Plot Options: stacked/grouped/pct/table bar types, alpha/count sort, horizontal bars toggle
+> - Quick Plots pills (Mut# vs Dx, FGA vs Dx, Mut# vs FGA)
+> - "Same gene (GENE)" option in vertical axis gene selector
+> - Log scale checkbox (log2(value+1)) for scatter and box plots
+> - Regression line toggle for scatter plots
+> - Sort by median for box plots
+>
+> **Remaining gaps (blocked on new data columns or major new features):**
+> - DriverVsVUS count-by mode — needs `putative_driver` field in MAF loader
+> - VAF count-by mode — needs `t_alt_count`/`t_ref_count` in MAF loader
+> - SV VariantType count-by mode — needs `variantClass` in SV loader
+> - Coloring menu ("Color samples by:") — overlay colors on scatter/box points
+> - Connect samples toggle — lines between same-patient samples in box plots
+> - Data availability banner — detailed per-axis sample counts
 
 ---
 
