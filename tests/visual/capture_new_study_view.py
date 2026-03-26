@@ -25,9 +25,14 @@ OUT_DIR = Path(__file__).parent / "screenshots" / "new"
 
 
 def wait_for_dashboard(page: Page) -> None:
-    """Wait for the server-rendered dashboard + ECharts/GridStack to stabilize."""
+    """Wait for JS to build the dynamic dashboard widgets and charts to render."""
     try:
         page.wait_for_load_state("networkidle", timeout=LOAD_TIMEOUT_MS)
+    except Exception:
+        pass
+    # Wait for dynamic widgets to be created by buildDashboard() JS
+    try:
+        page.wait_for_selector("#widget-CANCER_TYPE", timeout=15_000)
     except Exception:
         pass
     page.wait_for_timeout(SETTLE_MS)
@@ -40,13 +45,10 @@ def capture_full_dashboard(page: Page, study_id: str) -> None:
 
 
 def capture_chart_priority_layout(page: Page, study_id: str) -> None:
-    """Screenshot the GridStack chart grid to verify chart ordering."""
+    """Screenshot the chart grid area to verify chart ordering."""
     print("  [2/7] Chart priority layout")
-    grid = page.locator("#dashboard-grid").first
-    if grid.count() > 0:
-        grid.screenshot(path=str(OUT_DIR / "chart_priority_layout.png"))
-    else:
-        page.screenshot(path=str(OUT_DIR / "chart_priority_layout.png"), full_page=True)
+    # Full-page captures the entire grid layout; element screenshot can timeout on large grids
+    page.screenshot(path=str(OUT_DIR / "chart_priority_layout.png"), full_page=True)
 
 
 def capture_pie_chart_center_labels(page: Page, study_id: str) -> None:
@@ -129,8 +131,15 @@ def main() -> None:
     print(f"\nCapturing new study view: {study_url}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not args.headed, slow_mo=50)
-        context = browser.new_context(viewport={"width": 1600, "height": 900})
+        browser = p.chromium.launch(
+            headless=not args.headed,
+            slow_mo=50,
+            args=["--ignore-certificate-errors"],
+        )
+        context = browser.new_context(
+            viewport={"width": 1600, "height": 900},
+            ignore_https_errors=True,
+        )
         page = context.new_page()
 
         print(f"  Navigating to {study_url}")

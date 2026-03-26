@@ -262,6 +262,8 @@ async function updatePieWidget(attrId) {
     } catch (err) {}
 }
 
+const AGE_ATTRS = new Set(['AGE', 'CURRENT_AGE_DEID', 'DIAGNOSIS_AGE', 'AGE_AT_DIAGNOSIS']);
+
 async function updateBarWidget(attrId) {
     const chartDom = document.getElementById(`chart-${attrId}`);
     if (!chartDom) return;
@@ -273,6 +275,7 @@ async function updateBarWidget(attrId) {
         formData.append('study_id', DashboardState.studyId);
         formData.append('filter_json', JSON.stringify(DashboardState.filters));
         formData.append('attribute_id', attrId);
+        if (AGE_ATTRS.has(attrId)) formData.append('bin_size', '5');
         let bins, naCount = 0;
         const response = await fetch('/study/summary/chart/numeric', { method: 'POST', body: formData });
         const json = await response.json();
