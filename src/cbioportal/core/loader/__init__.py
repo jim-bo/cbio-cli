@@ -76,6 +76,67 @@ class Monitor:
         }
 
 
+def _load_generic_assay(conn, study_id: str, filepath: Path, stable_id: str, meta_props: set[str]) -> None:
+    """Load a generic assay file (drug treatment, etc.) into long format.
+
+    Creates table ``{study_id}_ga_{stable_id}`` with columns:
+        study_id, entity_id, sample_id, value DOUBLE, is_limit BOOLEAN
+
+    ``meta_props`` is the set of non-sample metadata columns declared in
+    ``generic_entity_meta_properties`` (e.g. NAME, URL, DESCRIPTION).
+    Values prefixed with '>' or '<' are censored (limit values).
+    """
+    # Columns that are entity metadata, not sample IDs
+    _META_COLS = {"ENTITY_STABLE_ID"} | {p.strip() for p in meta_props}
+
+    with open(filepath) as f:
+        for line in f:
+            if not line.startswith("#"):
+                header_cols = line.strip().split("\t")
+                break
+
+    entity_col = header_cols.index("ENTITY_STABLE_ID") if "ENTITY_STABLE_ID" in header_cols else 0
+    sample_indices = [(i, c) for i, c in enumerate(header_cols) if c not in _META_COLS]
+
+    safe_id = stable_id.replace("-", "_").replace(" ", "_")
+    table_name = f'"{study_id}_ga_{safe_id}"'
+    conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute(f"""
+        CREATE TABLE {table_name} (
+            study_id  VARCHAR NOT NULL,
+            entity_id VARCHAR NOT NULL,
+            sample_id VARCHAR NOT NULL,
+            value     DOUBLE,
+            is_limit  BOOLEAN DEFAULT false
+        )
+    """)
+
+    batch: list[tuple] = []
+    with open(filepath) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if parts[entity_col] == "ENTITY_STABLE_ID":
+                continue  # header row
+            entity_id = parts[entity_col] if entity_col < len(parts) else ""
+            for idx, sample_id in sample_indices:
+                try:
+                    raw = parts[idx].strip() if idx < len(parts) else ""
+                    if raw in ("", "NA", "null", "NULL"):
+                        continue
+                    is_limit = raw.startswith(">") or raw.startswith("<")
+                    val = float(raw.lstrip("><"))
+                except (ValueError, IndexError):
+                    continue
+                batch.append((study_id, entity_id, sample_id, val, is_limit))
+                if len(batch) >= 10_000:
+                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?)", batch)
+                    batch.clear()
+    if batch:
+        conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?)", batch)
+
+
 def _load_wide_matrix(conn, study_id: str, filepath: Path, table_name: str, value_col: str, *, filter_zeros: bool = False):
     """Load a gene×sample wide matrix (CNA, expression, protein, methylation) into long format.
 
@@ -370,6 +431,24 @@ def load_study(
                               f'"{raw_study_id}_methylation"', "methylation_value")
             normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
+        if load_expression:
+            # Load generic assay profiles (treatment response, etc.)
+            # We load ALL meta_*.txt files with genetic_alteration_type=GENERIC_ASSAY
+            for meta_path in sorted(study_path.glob("meta_*.txt")):
+                meta = parse_meta_file(meta_path)
+                if meta.get("genetic_alteration_type") != "GENERIC_ASSAY":
+                    continue
+                stable_id = meta.get("stable_id", "")
+                data_filename = meta.get("data_filename", "")
+                if not stable_id or not data_filename:
+                    continue
+                data_file = study_path / data_filename
+                if not data_file.exists():
+                    continue
+                raw_props = meta.get("generic_entity_meta_properties", "")
+                meta_props = {p.strip() for p in raw_props.split(",") if p.strip()} if raw_props else set()
+                _load_generic_assay(conn, raw_study_id, data_file, stable_id, meta_props)
+                loaded_any = True
         if load_timeline and timeline_files:
             for timeline_file in timeline_files:
                 # Extract suffix from filename, e.g., 'treatment' from 'data_timeline_treatment.txt'

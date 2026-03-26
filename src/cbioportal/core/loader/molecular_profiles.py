@@ -22,14 +22,27 @@ def load_molecular_profiles(conn, study_id: str, study_path: Path) -> None:
             study_id                      VARCHAR NOT NULL,
             stable_id                     VARCHAR NOT NULL,
             genetic_alteration_type       VARCHAR NOT NULL,
+            generic_assay_type            VARCHAR,
             datatype                      VARCHAR,
             profile_name                  VARCHAR,
             profile_description           VARCHAR,
             show_profile_in_analysis_tab  BOOLEAN DEFAULT true,
             data_filename                 VARCHAR,
+            pivot_threshold               DOUBLE,
+            sort_order                    VARCHAR,
             PRIMARY KEY (study_id, stable_id)
         )
     """)
+    # Add new columns to existing tables (idempotent ALTER TABLE)
+    for col, typedef in [
+        ("generic_assay_type", "VARCHAR"),
+        ("pivot_threshold", "DOUBLE"),
+        ("sort_order", "VARCHAR"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE molecular_profiles ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass  # column already exists
 
     # Idempotent: remove stale rows before re-inserting
     conn.execute(
@@ -51,20 +64,40 @@ def load_molecular_profiles(conn, study_id: str, study_path: Path) -> None:
 
         show = meta.get("show_profile_in_analysis_tab", "true").lower() == "true"
 
+        pivot = meta.get("pivot_threshold_value")
+        try:
+            pivot = float(pivot) if pivot is not None else None
+        except (ValueError, TypeError):
+            pivot = None
+
         conn.execute(
             """INSERT INTO molecular_profiles
-               (study_id, stable_id, genetic_alteration_type, datatype,
-                profile_name, profile_description, show_profile_in_analysis_tab,
-                data_filename)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (study_id, stable_id, genetic_alteration_type, generic_assay_type,
+                datatype, profile_name, profile_description,
+                show_profile_in_analysis_tab, data_filename,
+                pivot_threshold, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (study_id, stable_id) DO UPDATE SET
+                   genetic_alteration_type = excluded.genetic_alteration_type,
+                   generic_assay_type = excluded.generic_assay_type,
+                   datatype = excluded.datatype,
+                   profile_name = excluded.profile_name,
+                   profile_description = excluded.profile_description,
+                   show_profile_in_analysis_tab = excluded.show_profile_in_analysis_tab,
+                   data_filename = excluded.data_filename,
+                   pivot_threshold = excluded.pivot_threshold,
+                   sort_order = excluded.sort_order""",
             [
                 study_id,
                 meta.get("stable_id", ""),
                 meta["genetic_alteration_type"],
+                meta.get("generic_assay_type"),
                 meta.get("datatype", ""),
                 meta.get("profile_name", ""),
                 meta.get("profile_description", ""),
                 show,
                 meta.get("data_filename", ""),
+                pivot,
+                meta.get("value_sort_order"),
             ],
         )

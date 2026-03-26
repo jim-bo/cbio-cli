@@ -63,6 +63,19 @@ def get_molecular_profiles(conn, study_id: str, alteration_type: str = None) -> 
         return []
 
 
+def get_generic_assay_entities(conn, study_id: str, stable_id: str) -> list[str]:
+    """Return distinct entity IDs for a generic assay profile, sorted alphabetically."""
+    safe_id = stable_id.replace("-", "_").replace(" ", "_")
+    table_name = f'"{study_id}_ga_{safe_id}"'
+    try:
+        rows = conn.execute(
+            f"SELECT DISTINCT entity_id FROM {table_name} ORDER BY entity_id"
+        ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
 def get_cancer_types_summary(
     conn,
     study_id: str,
@@ -276,6 +289,25 @@ def get_plots_data(
     h_config = _normalize_config(h_config)
     v_config = _normalize_config(v_config)
 
+    h_type = h_config.get("data_type", "")
+    v_type = v_config.get("data_type", "")
+
+    # Waterfall: one axis is generic_assay, the other is "none" (ordered samples)
+    # Legacy ref: PlotsTab.tsx — PlotType.WaterfallPlot when one axis data_type is None
+    waterfall_config = None
+    if h_type == "generic_assay" and v_type in ("none", ""):
+        waterfall_config = h_config
+    elif v_type == "generic_assay" and h_type in ("none", ""):
+        waterfall_config = v_config
+
+    if waterfall_config is not None:
+        axis_values = _get_axis_values(conn, study_id, waterfall_config)
+        common_ids = set(axis_values["values"].keys())
+        result = _build_waterfall_data(axis_values, common_ids)
+        result["h_total"] = len(common_ids)
+        result["v_total"] = len(common_ids)
+        return result
+
     # Get per-sample values for each axis
     h_values = _get_axis_values(conn, study_id, h_config)
     v_values = _get_axis_values(conn, study_id, v_config)
@@ -326,6 +358,10 @@ def _normalize_config(config: dict) -> dict:
         out["plot_by"] = out.pop("plotBy")
     if "patientAttribute" in out:
         out["patient_attribute"] = out.pop("patientAttribute")
+    if "entityId" in out:
+        out["entity_id"] = out.pop("entityId")
+    if "stableId" in out:
+        out["stable_id"] = out.pop("stableId")
     return out
 
 
@@ -348,6 +384,8 @@ def _get_axis_values(conn, study_id: str, config: dict) -> dict:
         return _get_protein_axis(conn, study_id, config)
     elif data_type == "methylation":
         return _get_methylation_axis(conn, study_id, config)
+    elif data_type == "generic_assay":
+        return _get_generic_assay_axis(conn, study_id, config)
     else:
         return {"values": {}, "is_numeric": False, "label": "Unknown"}
 
@@ -703,6 +741,101 @@ def _get_methylation_axis(conn, study_id: str, config: dict) -> dict:
     except Exception:
         pass
     return {"values": values, "is_numeric": True, "label": f"{gene}: {profile_name}"}
+
+
+def _get_generic_assay_axis(conn, study_id: str, config: dict) -> dict:
+    """Get generic assay (treatment response, etc.) values per sample for an entity.
+
+    Legacy ref: PlotsTabUtils.tsx:1412-1491 — makeAxisDataPromise_GenericAssay.
+    LIMIT-VALUE profiles have censored entries (is_limit=true); we include those
+    in the values dict and pass them through via the 'limit_samples' set so the
+    waterfall renderer can mark them with diamonds.
+    """
+    entity_id = config.get("entity_id", "")
+    stable_id = config.get("stable_id", "")
+    if not stable_id:
+        return {"values": {}, "is_numeric": True, "label": entity_id or "Unknown",
+                "limit_samples": set(), "pivot_threshold": None, "sort_order": "ASC"}
+
+    safe_id = stable_id.replace("-", "_").replace(" ", "_")
+    table_name = f'"{study_id}_ga_{safe_id}"'
+
+    try:
+        rows = conn.execute(
+            f"SELECT sample_id, value, is_limit FROM {table_name} WHERE entity_id = ?",
+            [entity_id],
+        ).fetchall()
+    except Exception:
+        return {"values": {}, "is_numeric": True, "label": f"{entity_id}",
+                "limit_samples": set(), "pivot_threshold": None, "sort_order": "ASC"}
+
+    values = {sid: float(val) for sid, val, _ in rows if val is not None}
+    limit_samples = {sid for sid, val, is_lim in rows if is_lim}
+
+    # Profile metadata for label and waterfall config
+    profile_name = stable_id
+    pivot_threshold = None
+    sort_order = "ASC"
+    try:
+        row = conn.execute(
+            "SELECT profile_name, pivot_threshold, sort_order FROM molecular_profiles "
+            "WHERE study_id = ? AND stable_id = ?",
+            [study_id, stable_id],
+        ).fetchone()
+        if row:
+            if row[0]:
+                profile_name = row[0]
+            pivot_threshold = row[1]
+            sort_order = row[2] or "ASC"
+    except Exception:
+        pass
+
+    return {
+        "values": values,
+        "is_numeric": True,
+        "label": f"{entity_id}: {profile_name}",
+        "limit_samples": limit_samples,
+        "pivot_threshold": pivot_threshold,
+        "sort_order": sort_order,
+    }
+
+
+def _build_waterfall_data(axis_values: dict, common_ids: set) -> dict:
+    """Build waterfall plot data (sorted bar chart for LIMIT-VALUE generic assay).
+
+    Legacy ref: PlotsTab.tsx waterfall plot — bars sorted by value per sort_order,
+    pivot_threshold drawn as a horizontal reference line, limit values shown as
+    diamonds (is_limit flag).
+    """
+    sort_order = axis_values.get("sort_order", "ASC")
+    pivot_threshold = axis_values.get("pivot_threshold")
+    limit_samples = axis_values.get("limit_samples", set())
+
+    points = []
+    for sid in common_ids:
+        val = axis_values["values"].get(sid)
+        if val is None:
+            continue
+        try:
+            points.append({
+                "sample_id": sid,
+                "value": float(val),
+                "is_limit": sid in limit_samples,
+            })
+        except (TypeError, ValueError):
+            continue
+
+    reverse = sort_order == "DESC"
+    points.sort(key=lambda p: p["value"], reverse=reverse)
+
+    return {
+        "plot_type": "waterfall",
+        "label": axis_values["label"],
+        "points": points,
+        "pivot_threshold": pivot_threshold,
+        "sort_order": sort_order,
+        "total_samples": len(points),
+    }
 
 
 def _build_bar_data(

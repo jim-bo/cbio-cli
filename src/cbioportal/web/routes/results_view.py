@@ -19,6 +19,7 @@ from cbioportal.core.plots_repository import (
     get_cancer_types_summary,
     get_clinical_attribute_options,
     get_color_data,
+    get_generic_assay_entities,
     get_molecular_profiles,
     get_plots_data,
 )
@@ -211,6 +212,18 @@ async def plots_clinical_options(
     conn = request.app.state.db_conn
     data = get_clinical_attribute_options(conn, study_id)
     return JSONResponse(data)
+
+
+@router.post("/results/oncoprint/plots-generic-assay-entities")
+async def plots_generic_assay_entities(
+    request: Request,
+    study_id: Annotated[str, Form()],
+    stable_id: Annotated[str, Form()],
+):
+    """Return sorted entity IDs (e.g. drug names) for a generic assay profile."""
+    conn = request.app.state.db_conn
+    entities = get_generic_assay_entities(conn, study_id, stable_id)
+    return JSONResponse({"entities": entities})
 
 
 @router.post("/results/oncoprint/plots-color-data")
