@@ -225,7 +225,7 @@ All axis data flows through `makeAxisDataPromise()` (`PlotsTabUtils.tsx:1493-162
   - Filters out non-mutated and not-profiled samples
   - Returns empty if no mutations have count data (lines 1259-1265)
 
-- **Our impl:** MutationType and MutatedVsWildType — **IMPLEMENTED**. DriverVsVUS and VAF — **NOT IMPLEMENTED**
+- **Our impl:** All four modes — **IMPLEMENTED** (MutationType, MutatedVsWildType, DriverVsVUS, VAF)
 
 ### 3.3 Copy Number Alteration (Discrete CNA)
 - **Handler:** `makeAxisDataPromise_Molecular` (lines 1103-1139 in `PlotsTabUtils.tsx`)
@@ -254,13 +254,13 @@ All axis data flows through `makeAxisDataPromise()` (`PlotsTabUtils.tsx:1493-162
   - One class → variant class name
   - Multiple → `"Multiple structural variants"`
 
-- **Our impl:** MutatedVsWildType — **IMPLEMENTED**. VariantType — **NOT IMPLEMENTED**
+- **Our impl:** Both modes — **IMPLEMENTED** (MutatedVsWildType, VariantType)
 
 ### 3.5 mRNA Expression / Protein Level / DNA Methylation
 - **Handler:** `makeAxisDataPromise_Molecular` (lines 1034-1044 in `PlotsTabUtils.tsx`)
 - **API:** `numericGeneMolecularDataCache` → `/api/molecular-profiles/{id}/molecular-data`
 - **Transform:** Raw numeric values, always returns `number` datatype
-- **Our impl:** **NOT IMPLEMENTED** (no continuous molecular data tables yet)
+- **Our impl:** **IMPLEMENTED** — `_load_wide_matrix()` loads expression/protein/methylation into long format; `_get_expression_axis()`, `_get_protein_axis()`, `_get_methylation_axis()` in `plots_repository.py`
 
 ### 3.6 Gene Sets
 - **Handler:** `makeAxisDataPromise_Geneset` (`PlotsTabUtils.tsx:1358-1410`)
@@ -758,24 +758,24 @@ Shows sample counts for each axis and their intersection. Styled with background
 | Clinical attribute axis | Yes | Yes | |
 | Mutation (MutationType) | Yes | Yes | |
 | Mutation (MutatedVsWildType) | Yes | Yes | |
-| Mutation (DriverVsVUS) | Yes | No | Needs `putativeDriver` field in data |
-| Mutation (VAF) | Yes | No | Needs `tumorAltCount`/`tumorRefCount` |
+| Mutation (DriverVsVUS) | Yes | Yes | Uses `cbp_driver` column, graceful fallback |
+| Mutation (VAF) | Yes | Yes | `t_alt_count / (t_alt_count + t_ref_count)`, max per sample |
 | CNA axis (discrete) | Yes | Yes | Integer-only + profiled-only semantics |
 | SV (MutatedVsWildType) | Yes | Yes | |
-| SV (VariantType) | Yes | No | Needs `variantClass` grouping |
-| mRNA Expression | Yes | No | Needs continuous molecular data tables |
-| Protein Level | Yes | No | Low priority |
-| DNA Methylation | Yes | No | Low priority |
-| Gene Sets | Yes | No | Low priority |
-| Generic Assay | Yes | No | Low priority |
+| SV (VariantType) | Yes | Yes | Groups by SV `Class` column |
+| mRNA Expression | Yes | Yes | Loaded via `_load_wide_matrix()`, tested with kirp_tcga |
+| Protein Level | Yes | Yes | RPPA `Composite.Element.REF` → hugo split on `\|` |
+| DNA Methylation | Yes | Yes | Loads first methylation file found per study |
+| Gene Sets | Yes | No | No public studies with GSVA data in datahub |
+| Generic Assay | Yes | Yes | TREATMENT_RESPONSE / LIMIT-VALUE; tested with ccle_broad_2019 |
 | **Plot Types** | | | |
 | Bar chart (stacked) | Yes | Yes | |
 | Bar chart (grouped) | Yes | Yes | |
 | Bar chart (100% stacked) | Yes | Yes | |
 | Table plot | Yes | Yes | |
-| Scatter plot | Yes | Yes | Missing coloring overlay |
-| Box plot | Yes | Yes | Missing coloring overlay |
-| Waterfall plot | Yes | No | Only used with generic assay |
+| Scatter plot | Yes | Yes | |
+| Box plot | Yes | Yes | |
+| Waterfall plot | Yes | Yes | LIMIT-VALUE generic assay; sorted bars + pivot threshold line |
 | **Coloring Overlays** | | | |
 | Color by mutation type | Yes | Yes | Gene selector + mutation type overlay |
 | Color by CNA | Yes | Yes | Gene selector + CNA overlay |
@@ -783,17 +783,17 @@ Shows sample counts for each axis and their intersection. Styled with background
 | Color by clinical attribute | Yes | Yes | Clinical attribute dropdown with reserved colors |
 | **UI Features** | | | |
 | Swap axes | Yes | Yes | |
-| Quick plots pills | Yes | Yes | Different presets (Mut# vs Dx, FGA vs Dx, Mut# vs FGA) — adapted for available data |
+| Quick plots pills | Yes | Yes | Mut# vs Dx, FGA vs Dx, Mut# vs FGA, CNA vs Exp, Mut vs Exp, Methylation vs Exp |
 | Log scale | Yes | Yes | log2(value + 1) transform for scatter and box plots |
 | Regression line | Yes | Yes | Client-side least-squares linear regression on scatter |
 | Horizontal bars toggle | Yes | Yes | |
 | Sort by options | Yes | Yes | Alphabetical + sample count (bar); alphabetical + median (box) |
-| Connect samples (box) | Yes | No | Multi-sample patients |
-| Data availability banner | Yes | No | Sample count display |
+| Connect samples (box) | Yes | Yes | Dashed lines between categories for same-patient samples |
+| Data availability banner | Yes | Yes | Per-axis and intersection sample counts above chart |
 | **Export** | | | |
-| Download SVG | Yes | No | |
-| Download PNG | Yes | No | |
-| Download data (TSV) | Yes | No | See `PlotsTabUtils.tsx:3338-3526` |
+| Download SVG | Yes | Yes | |
+| Download PNG | Yes | Yes | |
+| Download data (TSV) | Yes | Yes | |
 
 ---
 

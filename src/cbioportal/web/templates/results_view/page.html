@@ -267,7 +267,10 @@
 #plots-controls label { font-size: 12px; font-weight: normal; }
 
 #plots-chart-area { flex: 1; padding: 12px 16px; position: relative; overflow: auto; }
-#plots-info { font-size: 13px; color: #333; margin-bottom: 8px; padding: 6px 10px; background: #f9f9f9; border: 1px solid #eee; border-radius: 3px; display: inline-block; }
+#plots-info { font-size: 13px; color: #333; margin-bottom: 8px; padding: 6px 10px; background: #eee; border-radius: 3px; display: inline-block; }
+#plots-download-bar { font-size: 12px; }
+#plots-download-bar a { color: #2374c8; text-decoration: none; }
+#plots-download-bar a:hover { text-decoration: underline; }
 #plots-chart-container { /* width/height set dynamically by renderPlotsBar/Scatter/Box */ width: 100%; height: 500px; }
 #plots-examples { margin-bottom: 8px; font-size: 13px; }
 #plots-examples a { margin-left: 8px; cursor: pointer; color: #2374c8; text-decoration: none; }
@@ -700,6 +703,10 @@ table#mut-table tr:hover td { background: #f9f9f9; }
         <a onclick="plotsExample('mut_dx')">Mut# vs Dx</a>
         <a onclick="plotsExample('fga_dx')">FGA vs Dx</a>
         <a onclick="plotsExample('mut_fga')">Mut# vs FGA</a>
+        <a onclick="plotsExample('cna_exp')" class="plots-opt-mrna" style="display:none;">CNA vs Exp</a>
+        <a onclick="plotsExample('mut_exp')" class="plots-opt-mrna" style="display:none;">Mut vs Exp</a>
+        <a onclick="plotsExample('meth_exp')" class="plots-opt-methylation" style="display:none;">Methylation vs Exp</a>
+        <a onclick="plotsExample('treatment_wf')" class="plots-opt-ga" style="display:none;">Treatment Response</a>
       </div>
       <div id="plots-wrap">
         <div id="plots-sidebar">
@@ -711,6 +718,10 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               <option value="structural_variant">Structural Variant</option>
               <option value="mutation">Mutation</option>
               <option value="copy_number">Copy Number</option>
+              <option value="mrna_expression" class="plots-opt-mrna" style="display:none;">mRNA Expression</option>
+              <option value="protein_level" class="plots-opt-protein" style="display:none;">Protein Level</option>
+              <option value="methylation" class="plots-opt-methylation" style="display:none;">DNA Methylation</option>
+              <option value="generic_assay" class="plots-opt-ga" style="display:none;">Treatment Response</option>
               <option value="clinical_attribute">Clinical Attribute</option>
             </select>
             <div id="plots-h-sub"></div>
@@ -727,6 +738,11 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               <option value="structural_variant">Structural Variant</option>
               <option value="mutation">Mutation</option>
               <option value="copy_number">Copy Number</option>
+              <option value="mrna_expression" class="plots-opt-mrna" style="display:none;">mRNA Expression</option>
+              <option value="protein_level" class="plots-opt-protein" style="display:none;">Protein Level</option>
+              <option value="methylation" class="plots-opt-methylation" style="display:none;">DNA Methylation</option>
+              <option value="generic_assay" class="plots-opt-ga" style="display:none;">Treatment Response</option>
+              <option value="none" class="plots-opt-ga" style="display:none;">Ordered samples</option>
             </select>
             <div id="plots-v-sub"></div>
           </div>
@@ -797,6 +813,11 @@ table#mut-table tr:hover td { background: #f9f9f9; }
             </span>
           </div>
           <div id="plots-info"></div>
+          <div id="plots-download-bar" style="display:none;margin-bottom:6px;">
+            <a href="#" onclick="downloadPlotsSVG(); return false;" style="font-size:12px;margin-right:12px;">SVG</a>
+            <a href="#" onclick="downloadPlotsPNG(); return false;" style="font-size:12px;margin-right:12px;">PNG</a>
+            <a href="#" onclick="downloadPlotsTSV(); return false;" style="font-size:12px;">Data</a>
+          </div>
           <div id="plots-chart-container"></div>
         </div>
       </div>
@@ -2050,6 +2071,22 @@ async function initPlotsTab() {
         plotsCliOpts = await postForm("/results/oncoprint/plots-clinical-options", { study_id: STUDY_ID });
     } catch(e) { console.error(e); }
 
+    // Show molecular data type options based on available profiles
+    var profileTypes = {};
+    (molecularProfiles || []).forEach(function(p) { profileTypes[p.genetic_alteration_type] = true; });
+    if (profileTypes['MRNA_EXPRESSION']) {
+        document.querySelectorAll('.plots-opt-mrna').forEach(function(el) { el.style.display = ''; });
+    }
+    if (profileTypes['PROTEIN_LEVEL']) {
+        document.querySelectorAll('.plots-opt-protein').forEach(function(el) { el.style.display = ''; });
+    }
+    if (profileTypes['METHYLATION']) {
+        document.querySelectorAll('.plots-opt-methylation').forEach(function(el) { el.style.display = ''; });
+    }
+    if (profileTypes['GENERIC_ASSAY']) {
+        document.querySelectorAll('.plots-opt-ga').forEach(function(el) { el.style.display = ''; });
+    }
+
     // Populate color menu dropdowns
     var genesGroup = document.getElementById("plots-color-genes");
     GENES.forEach(function(g) {
@@ -2141,6 +2178,79 @@ function buildAxisSubControls(axis) {
         html += '</select>';
         html += _buildGeneSelect(prefix, axis, state);
         delete state.plotBy;
+    } else if (dt === 'mrna_expression') {
+        state.dataType = 'mrna_expression';
+        var mrnaProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'MRNA_EXPRESSION';
+        });
+        if (mrnaProfiles.length > 0) {
+            html += '<div class="cts-heading">mRNA Profile</div>';
+            html += '<select id="' + prefix + '-mrnaprofile"' + (mrnaProfiles.length <= 1 ? ' disabled' : '') + '>';
+            mrnaProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+            html += '</select>';
+        }
+        html += _buildGeneSelect(prefix, axis, state);
+        delete state.plotBy;
+    } else if (dt === 'protein_level') {
+        state.dataType = 'protein_level';
+        var proteinProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'PROTEIN_LEVEL';
+        });
+        if (proteinProfiles.length > 0) {
+            html += '<div class="cts-heading">Protein Profile</div>';
+            html += '<select id="' + prefix + '-protprofile"' + (proteinProfiles.length <= 1 ? ' disabled' : '') + '>';
+            proteinProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+            html += '</select>';
+        }
+        html += _buildGeneSelect(prefix, axis, state);
+        delete state.plotBy;
+    } else if (dt === 'methylation') {
+        state.dataType = 'methylation';
+        var methProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'METHYLATION';
+        });
+        if (methProfiles.length > 0) {
+            html += '<div class="cts-heading">Methylation Profile</div>';
+            html += '<select id="' + prefix + '-methprofile"' + (methProfiles.length <= 1 ? ' disabled' : '') + '>';
+            methProfiles.forEach(function(p) {
+                html += '<option value="' + p.stable_id + '">' + p.profile_name + '</option>';
+            });
+            html += '</select>';
+        }
+        html += _buildGeneSelect(prefix, axis, state);
+        delete state.plotBy;
+    } else if (dt === 'generic_assay') {
+        state.dataType = 'generic_assay';
+        var gaProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'GENERIC_ASSAY';
+        });
+        html += '<div class="cts-heading">Profile</div>';
+        html += '<select id="' + prefix + '-gaprofile" onchange="onGAProfileChange(\'' + axis + '\')">';
+        gaProfiles.forEach(function(p) {
+            var sel = p.stable_id === state.stableId ? ' selected' : '';
+            html += '<option value="' + p.stable_id + '"' + sel + '>' + p.profile_name + '</option>';
+        });
+        html += '</select>';
+        html += '<div class="cts-heading">Entity</div>';
+        html += '<select id="' + prefix + '-gaentity" onchange="onPlotsSubChange(\'' + axis + '\')">';
+        html += '<option value="">Loading...</option>';
+        html += '</select>';
+        // Set default stable_id from first profile if unset
+        if (!state.stableId && gaProfiles.length > 0) {
+            state.stableId = gaProfiles[0].stable_id;
+        }
+        delete state.gene; delete state.plotBy;
+        // Async: populate entity dropdown
+        if (state.stableId) {
+            _loadGAEntities(prefix, axis, state);
+        }
+    } else if (dt === 'none') {
+        state.dataType = 'none';
+        delete state.gene; delete state.plotBy; delete state.stableId; delete state.entityId;
     } else if (dt === 'clinical_attribute') {
         state.dataType = 'clinical_attribute';
         html += '<div class="cts-heading">Clinical Attribute</div>';
@@ -2172,11 +2282,20 @@ function onPlotsSubChange(axis) {
     if (dt === 'clinical_attribute') {
         var attrEl = document.getElementById(prefix + '-attr');
         state.attributeId = attrEl ? attrEl.value : 'CANCER_TYPE';
-        delete state.gene; delete state.plotBy;
+        delete state.gene; delete state.plotBy; delete state.stableId; delete state.entityId;
+    } else if (dt === 'generic_assay') {
+        var gaProfileEl = document.getElementById(prefix + '-gaprofile');
+        var gaEntityEl = document.getElementById(prefix + '-gaentity');
+        state.stableId = gaProfileEl ? gaProfileEl.value : '';
+        state.entityId = gaEntityEl ? gaEntityEl.value : '';
+        delete state.gene; delete state.plotBy; delete state.attributeId;
+    } else if (dt === 'none') {
+        delete state.gene; delete state.plotBy; delete state.attributeId;
+        delete state.stableId; delete state.entityId;
     } else {
         var geneEl = document.getElementById(prefix + '-gene');
         state.gene = geneEl ? geneEl.value : GENE_0;
-        delete state.attributeId;
+        delete state.attributeId; delete state.stableId; delete state.entityId;
         if (dt === 'mutation' || dt === 'structural_variant') {
             var plotByEl = document.getElementById(prefix + '-plotby');
             state.plotBy = plotByEl ? plotByEl.value : 'mutated_vs_wildtype';
@@ -2186,6 +2305,38 @@ function onPlotsSubChange(axis) {
     }
 
     loadPlotsData();
+}
+
+async function _loadGAEntities(prefix, axis, state) {
+    try {
+        var resp = await postForm("/results/oncoprint/plots-generic-assay-entities", {
+            study_id: STUDY_ID,
+            stable_id: state.stableId,
+        });
+        var sel = document.getElementById(prefix + '-gaentity');
+        if (!sel) return;
+        sel.innerHTML = '';
+        (resp.entities || []).forEach(function(e) {
+            var selected = e === state.entityId ? ' selected' : '';
+            sel.innerHTML += '<option value="' + e + '"' + selected + '>' + e + '</option>';
+        });
+        // Update state with first entity if unset
+        if (!state.entityId && resp.entities && resp.entities.length > 0) {
+            state.entityId = resp.entities[0];
+        }
+        loadPlotsData();
+    } catch(e) { console.error('Failed to load GA entities', e); }
+}
+
+function onGAProfileChange(axis) {
+    var prefix = 'plots-' + axis;
+    var state = axis === 'h' ? PlotsState.hAxis : PlotsState.vAxis;
+    var profileEl = document.getElementById(prefix + '-gaprofile');
+    if (profileEl) {
+        state.stableId = profileEl.value;
+        state.entityId = '';
+    }
+    _loadGAEntities(prefix, axis, state);
 }
 
 function swapPlotsAxes() {
@@ -2214,13 +2365,14 @@ async function loadPlotsData() {
         });
         // Show/hide plot-type-specific controls
         var isScatterOrBox = plotsData.plot_type === "scatter" || plotsData.plot_type === "box";
+        var isWaterfall = plotsData.plot_type === "waterfall";
         var barControls = document.getElementById("plots-controls");
         var boxControls = document.getElementById("plots-box-controls");
         var scatterControls = document.getElementById("plots-scatter-controls");
         barControls.style.display = plotsData.plot_type === "bar" ? "block" : "none";
         boxControls.style.display = plotsData.plot_type === "box" ? "block" : "none";
         scatterControls.style.display = isScatterOrBox ? "block" : "none";
-        // Legacy ref: PlotsTab.tsx:5961 — color menu not shown for DiscreteVsDiscrete
+        // Legacy ref: PlotsTab.tsx:5961 — color menu not shown for DiscreteVsDiscrete or waterfall
         document.getElementById("plots-color-menu").style.display = isScatterOrBox ? "block" : "none";
         // Reset color data when plot type changes
         plotsColorData = null;
@@ -2238,6 +2390,7 @@ async function loadPlotsData() {
         if (plotsData.v_total != null) bannerParts.push("Vertical: " + plotsData.v_total.toLocaleString());
         bannerParts.push("Plotted: " + plotsData.total_samples.toLocaleString());
         document.getElementById("plots-info").textContent = bannerParts.join(" / ") + " samples";
+        document.getElementById("plots-download-bar").style.display = "block";
 
         renderPlotsChart();
     } catch(e) {
@@ -2270,6 +2423,8 @@ function renderPlotsChart() {
         renderPlotsScatter();
     } else if (plotsData.plot_type === "box") {
         renderPlotsBox();
+    } else if (plotsData.plot_type === "waterfall") {
+        renderPlotsWaterfall();
     }
 }
 
@@ -2489,10 +2644,6 @@ function renderPlotsBar() {
         xAxis: horizontal ? valAxis : catAxis,
         yAxis: horizontal ? catAxis : valAxis,
         series: series,
-        toolbox: {
-            right: 10, top: 0,
-            feature: { saveAsImage: { title: 'Download', pixelRatio: 2 } },
-        },
     };
 
     plotsChart.setOption(option, true);
@@ -2647,10 +2798,6 @@ function renderPlotsScatter() {
         xAxis: { type: 'value', name: hLabel, nameLocation: 'middle', nameGap: 35 },
         yAxis: { type: 'value', name: vLabel, nameLocation: 'middle', nameGap: 60 },
         series: seriesList,
-        toolbox: {
-            right: 10, top: 0,
-            feature: { saveAsImage: { title: 'Download', pixelRatio: 2 } },
-        },
     }, true);
 }
 
@@ -2771,10 +2918,85 @@ function renderPlotsBox() {
         },
         yAxis: { type: 'value', name: vLabel, nameLocation: 'middle', nameGap: 50 },
         series: seriesList,
-        toolbox: {
-            right: 10, top: 0,
-            feature: { saveAsImage: { title: 'Download', pixelRatio: 2 } },
+    }, true);
+}
+
+// Legacy ref: PlotsTab.tsx — WaterfallPlot for LIMIT-VALUE generic assay data
+// Bars sorted by value per sort_order, pivot_threshold as a horizontal mark line,
+// limit values (censored) rendered with a diamond symbol on top of the bar.
+function renderPlotsWaterfall() {
+    var d = plotsData;
+    var pts = d.points || [];
+    var label = d.label || '';
+    var pivot = d.pivot_threshold;
+
+    var barData = pts.map(function(p, i) {
+        return {
+            value: p.value,
+            itemStyle: p.is_limit ? { color: '#aaa', borderColor: '#555' } : {},
+        };
+    });
+    var sampleIds = pts.map(function(p) { return p.sample_id; });
+
+    var markLines = [];
+    if (pivot != null) {
+        markLines.push({
+            yAxis: pivot,
+            label: { formatter: 'Threshold (' + pivot + ')', position: 'end' },
+            lineStyle: { color: '#d00', type: 'dashed', width: 1.5 },
+        });
+    }
+
+    // Diamond markers for limit values
+    var limitSeries = {
+        type: 'scatter',
+        symbol: 'diamond',
+        symbolSize: 8,
+        itemStyle: { color: '#000' },
+        data: pts.map(function(p, i) {
+            return p.is_limit ? [i, p.value] : null;
+        }).filter(Boolean),
+        z: 10,
+    };
+
+    plotsChart.setOption({
+        animation: false,
+        grid: { left: 70, right: 30, top: 30, bottom: 80 },
+        tooltip: {
+            trigger: 'axis',
+            formatter: function(params) {
+                var i = params[0].dataIndex;
+                return sampleIds[i] + '<br/>' + label.split(':').slice(-1)[0].trim() + ': ' + pts[i].value.toFixed(4) + (pts[i].is_limit ? ' (limit)' : '');
+            }
         },
+        xAxis: {
+            type: 'category',
+            data: sampleIds,
+            axisLabel: { show: false },
+            name: 'Samples (n=' + pts.length + ')',
+            nameLocation: 'middle',
+            nameGap: 25,
+        },
+        yAxis: {
+            type: 'value',
+            name: label,
+            nameLocation: 'middle',
+            nameGap: 60,
+        },
+        series: [
+            {
+                type: 'bar',
+                data: barData,
+                barMaxWidth: 8,
+                itemStyle: { color: '#3366cc' },
+                markLine: markLines.length ? {
+                    silent: true,
+                    symbol: 'none',
+                    data: markLines,
+                } : undefined,
+            },
+            limitSeries,
+        ],
     }, true);
 }
 
@@ -2830,13 +3052,87 @@ function plotsExample(type) {
     } else if (type === 'mut_fga') {
         PlotsState.hAxis = { dataType: 'mutation', gene: GENE_0, plotBy: 'mutated_vs_wildtype' };
         PlotsState.vAxis = { dataType: 'clinical_attribute', attributeId: 'FRACTION_GENOME_ALTERED' };
+    } else if (type === 'cna_exp') {
+        PlotsState.hAxis = { dataType: 'copy_number', gene: GENE_0 };
+        PlotsState.vAxis = { dataType: 'mrna_expression', gene: GENE_0 };
+    } else if (type === 'mut_exp') {
+        PlotsState.hAxis = { dataType: 'mutation', gene: GENE_0, plotBy: 'mutated_vs_wildtype' };
+        PlotsState.vAxis = { dataType: 'mrna_expression', gene: GENE_0 };
+    } else if (type === 'meth_exp') {
+        PlotsState.hAxis = { dataType: 'methylation', gene: GENE_0 };
+        PlotsState.vAxis = { dataType: 'mrna_expression', gene: GENE_0 };
+    } else if (type === 'treatment_wf') {
+        // Pick first GENERIC_ASSAY profile available
+        var gaProfiles = (molecularProfiles || []).filter(function(p) {
+            return p.genetic_alteration_type === 'GENERIC_ASSAY';
+        });
+        var firstProfile = gaProfiles.length > 0 ? gaProfiles[0] : null;
+        PlotsState.hAxis = firstProfile
+            ? { dataType: 'generic_assay', stableId: firstProfile.stable_id, entityId: '' }
+            : { dataType: 'generic_assay', stableId: '', entityId: '' };
+        PlotsState.vAxis = { dataType: 'none' };
     }
 
-    document.getElementById('plots-h-datatype').value = PlotsState.hAxis.dataType;
-    document.getElementById('plots-v-datatype').value = PlotsState.vAxis.dataType;
+    document.getElementById('plots-h-datatype').value = PlotsState.hAxis.dataType || 'clinical_attribute';
+    document.getElementById('plots-v-datatype').value = PlotsState.vAxis.dataType || 'clinical_attribute';
     buildAxisSubControls('h');
     buildAxisSubControls('v');
     loadPlotsData();
+}
+
+// ── Download handlers for Plots tab ─────────────────────────────────────────
+function downloadPlotsSVG() {
+    if (!plotsChart) return;
+    var url = plotsChart.getConnectedDataURL({ type: 'svg', backgroundColor: '#fff' });
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'plots.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function downloadPlotsPNG() {
+    if (!plotsChart) return;
+    var url = plotsChart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'plots.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function downloadPlotsTSV() {
+    if (!plotsData) return;
+    var lines = [];
+    if (plotsData.plot_type === 'bar') {
+        // Header: category + each series name
+        var header = [plotsData.h_label || 'Category'];
+        plotsData.series.forEach(function(s) { header.push(s.name); });
+        lines.push(header.join('\t'));
+        plotsData.categories.forEach(function(cat, ci) {
+            var row = [cat];
+            plotsData.series.forEach(function(s) { row.push(s.data[ci] || 0); });
+            lines.push(row.join('\t'));
+        });
+    } else if (plotsData.plot_type === 'scatter') {
+        lines.push(['Sample ID', plotsData.h_label, plotsData.v_label].join('\t'));
+        plotsData.points.forEach(function(p) {
+            lines.push([p.sample_id, p.x, p.y].join('\t'));
+        });
+    } else if (plotsData.plot_type === 'box') {
+        lines.push(['Sample ID', plotsData.h_label, plotsData.v_label].join('\t'));
+        plotsData.categories.forEach(function(cat) {
+            var rawPts = plotsData.box_raw_data[cat] || [];
+            rawPts.forEach(function(rp) {
+                lines.push([rp.sample_id, cat, rp.value].join('\t'));
+            });
+        });
+    }
+    if (lines.length === 0) return;
+    var blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values' });
+    _downloadBlob(blob, 'plot_data.tsv');
 }
 </script>
 {% endblock %}

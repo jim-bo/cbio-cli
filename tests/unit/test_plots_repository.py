@@ -6,6 +6,7 @@ from cbioportal.core.plots_repository import (
     get_cancer_types_summary,
     get_clinical_attribute_options,
     get_color_data,
+    get_generic_assay_entities,
     get_plots_data,
 )
 
@@ -107,6 +108,88 @@ def conn():
         INSERT INTO clinical_attribute_meta VALUES
         ('test_study', 'CANCER_TYPE', 'Cancer Type', 'Cancer type', 'STRING', false, 1),
         ('test_study', 'FRACTION_GENOME_ALTERED', 'Fraction Genome Altered', 'FGA', 'NUMBER', false, 2)
+    """)
+
+    # -- expression table (mRNA)
+    c.execute("""
+        CREATE TABLE "test_study_expression" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, expression_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_expression" VALUES
+        ('test_study', 'KRAS', 'S1', 105.5),
+        ('test_study', 'KRAS', 'S2', 230.1),
+        ('test_study', 'KRAS', 'S3', 50.8),
+        ('test_study', 'KRAS', 'S5', 0.0),
+        ('test_study', 'BRAF', 'S1', 88.2),
+        ('test_study', 'BRAF', 'S2', 410.7),
+        ('test_study', 'BRAF', 'S4', 175.3)
+    """)
+
+    # -- protein table
+    c.execute("""
+        CREATE TABLE "test_study_protein" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, protein_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_protein" VALUES
+        ('test_study', 'KRAS', 'S1', 0.85),
+        ('test_study', 'KRAS', 'S2', -0.32),
+        ('test_study', 'KRAS', 'S3', 1.21)
+    """)
+
+    # -- methylation table
+    c.execute("""
+        CREATE TABLE "test_study_methylation" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, methylation_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_methylation" VALUES
+        ('test_study', 'KRAS', 'S1', 0.12),
+        ('test_study', 'KRAS', 'S2', 0.88),
+        ('test_study', 'KRAS', 'S4', 0.45)
+    """)
+
+    # -- generic assay table (treatment response IC50)
+    c.execute("""
+        CREATE TABLE "test_study_ga_IC50" (
+            study_id VARCHAR, entity_id VARCHAR, sample_id VARCHAR,
+            value DOUBLE, is_limit BOOLEAN
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_ga_IC50" VALUES
+        ('test_study', 'Erlotinib', 'S1', 0.5, false),
+        ('test_study', 'Erlotinib', 'S2', 2.3, false),
+        ('test_study', 'Erlotinib', 'S3', 0.1, false),
+        ('test_study', 'Erlotinib', 'S4', 10.0, true),
+        ('test_study', 'Gefitinib', 'S1', 1.2, false),
+        ('test_study', 'Gefitinib', 'S2', 0.3, false)
+    """)
+
+    # -- molecular_profiles with generic assay profile
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS molecular_profiles (
+            study_id VARCHAR, stable_id VARCHAR, genetic_alteration_type VARCHAR,
+            generic_assay_type VARCHAR, datatype VARCHAR,
+            profile_name VARCHAR, profile_description VARCHAR,
+            show_profile_in_analysis_tab BOOLEAN,
+            data_filename VARCHAR, pivot_threshold DOUBLE, sort_order VARCHAR
+        )
+    """)
+    c.execute("""
+        INSERT INTO molecular_profiles VALUES
+        ('test_study', 'IC50', 'GENERIC_ASSAY', 'TREATMENT_RESPONSE', 'LIMIT-VALUE',
+         'Treatment response: IC50', 'IC50 values', true, 'data_ic50.txt', 1.0, 'ASC'),
+        ('test_study', 'mrna', 'MRNA_EXPRESSION', NULL, 'CONTINUOUS',
+         'mRNA expression', 'mRNA', true, 'data_mrna.txt', NULL, NULL),
+        ('test_study', 'methylation_hm27', 'METHYLATION', NULL, 'CONTINUOUS',
+         'Methylation (HM27)', 'Methylation', true, 'data_meth.txt', NULL, NULL),
+        ('test_study', 'rppa', 'PROTEIN_LEVEL', NULL, 'LOG2-VALUE',
+         'Protein expression (RPPA)', 'Protein', true, 'data_rppa.txt', NULL, NULL)
     """)
 
     yield c
@@ -510,3 +593,197 @@ class TestDataBanner:
         assert result["h_total"] == 5
         assert result["v_total"] == 5
         assert result["total_samples"] == 5
+
+
+# ── mRNA Expression Axis ───────────────────────────────────────────────
+
+
+class TestExpressionAxis:
+    def test_expression_returns_numeric(self, conn):
+        """mRNA expression axis should return numeric values."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        # numeric × discrete → box plot
+        assert result["plot_type"] == "box"
+
+    def test_expression_values(self, conn):
+        """Expression values should match what we inserted."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        # KRAS expression: S1=105.5, S2=230.1, S3=50.8, S5=0.0
+        raw = {}
+        for cat, pts in result["box_raw_data"].items():
+            for pt in pts:
+                raw[pt["sample_id"]] = pt["value"]
+        assert abs(raw["S1"] - 105.5) < 0.01
+        assert abs(raw["S2"] - 230.1) < 0.01
+        assert abs(raw["S3"] - 50.8) < 0.01
+        assert abs(raw["S5"] - 0.0) < 0.01
+
+    def test_expression_scatter(self, conn):
+        """Two expression axes → scatter plot."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "mrna_expression", "gene": "BRAF"},
+        )
+        assert result["plot_type"] == "scatter"
+        # Common samples: S1 and S2 (both have KRAS and BRAF expression)
+        assert result["total_samples"] == 2
+
+    def test_expression_empty_gene(self, conn):
+        """Gene with no expression data → empty result."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "FAKEGENE"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["total_samples"] == 0
+
+
+# ── Protein Level Axis ─────────────────────────────────────────────────
+
+
+class TestProteinAxis:
+    def test_protein_returns_numeric(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "protein_level", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["plot_type"] == "box"
+
+    def test_protein_values(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "protein_level", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        raw = {}
+        for cat, pts in result["box_raw_data"].items():
+            for pt in pts:
+                raw[pt["sample_id"]] = pt["value"]
+        assert abs(raw["S1"] - 0.85) < 0.01
+        assert abs(raw["S2"] - (-0.32)) < 0.01
+        assert abs(raw["S3"] - 1.21) < 0.01
+
+
+# ── DNA Methylation Axis ──────────────────────────────────────────────
+
+
+class TestMethylationAxis:
+    def test_methylation_returns_numeric(self, conn):
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "methylation", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["plot_type"] == "box"
+
+    def test_methylation_vs_expression_scatter(self, conn):
+        """Methylation vs expression → scatter plot (common use case)."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "methylation", "gene": "KRAS"},
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+        )
+        assert result["plot_type"] == "scatter"
+        # Common samples: S1 and S2 (have both KRAS methylation and expression)
+        assert result["total_samples"] == 2
+
+
+# ── Generic Assay / Waterfall ──────────────────────────────────────────
+
+
+class TestGenericAssayAxis:
+    def test_waterfall_plot_type(self, conn):
+        """Generic assay + none axis → waterfall plot."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "none"},
+        )
+        assert result["plot_type"] == "waterfall"
+
+    def test_waterfall_sorted_asc(self, conn):
+        """Points should be sorted ascending by value."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "none"},
+        )
+        values = [p["value"] for p in result["points"]]
+        assert values == sorted(values)
+
+    def test_waterfall_limit_flag(self, conn):
+        """S4 has is_limit=true — should be flagged in the output."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "none"},
+        )
+        limit_samples = {p["sample_id"] for p in result["points"] if p["is_limit"]}
+        assert "S4" in limit_samples
+
+    def test_waterfall_pivot_threshold(self, conn):
+        """Pivot threshold from molecular_profiles should be in response."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "none"},
+        )
+        assert result["pivot_threshold"] == 1.0
+
+    def test_waterfall_total_samples(self, conn):
+        """total_samples should match number of points."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "none"},
+        )
+        assert result["total_samples"] == len(result["points"]) == 4
+
+    def test_generic_assay_vs_clinical_box(self, conn):
+        """Generic assay (numeric) vs clinical (discrete) → box plot."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "IC50", "entity_id": "Erlotinib"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["plot_type"] == "box"
+
+    def test_get_generic_assay_entities(self, conn):
+        """Should return sorted list of entity IDs for a profile."""
+        entities = get_generic_assay_entities(conn, "test_study", "IC50")
+        assert entities == ["Erlotinib", "Gefitinib"]
+
+    def test_missing_table_returns_empty(self, conn):
+        """Missing generic assay table should return empty waterfall gracefully."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "generic_assay", "stable_id": "NONEXISTENT", "entity_id": "Drug"},
+            {"data_type": "none"},
+        )
+        assert result["plot_type"] == "waterfall"
+        assert result["total_samples"] == 0
