@@ -748,6 +748,22 @@ table#mut-table tr:hover td { background: #f9f9f9; }
               Horizontal Bars
             </label>
           </div>
+          <!-- Scatter/Box-specific controls -->
+          <div id="plots-scatter-controls" style="display:none;">
+            <div class="cts-heading">Options</div>
+            <label style="display:block;">
+              <input type="checkbox" id="plots-log-h" onchange="renderPlotsChart()">
+              Log scale (horizontal)
+            </label>
+            <label style="display:block;">
+              <input type="checkbox" id="plots-log-v" onchange="renderPlotsChart()">
+              Log scale (vertical)
+            </label>
+            <label id="plots-regression-wrap" style="display:block;">
+              <input type="checkbox" id="plots-regression" onchange="renderPlotsChart()">
+              Show regression line
+            </label>
+          </div>
         </div>
 
         <div id="plots-chart-area">
@@ -2153,9 +2169,19 @@ async function loadPlotsData() {
             h_config: JSON.stringify(PlotsState.hAxis),
             v_config: JSON.stringify(PlotsState.vAxis),
         });
-        // Show/hide bar-specific controls
+        // Show/hide plot-type-specific controls
         var barControls = document.getElementById("plots-controls");
+        var scatterControls = document.getElementById("plots-scatter-controls");
         barControls.style.display = plotsData.plot_type === "bar" ? "block" : "none";
+        scatterControls.style.display = (plotsData.plot_type === "scatter" || plotsData.plot_type === "box") ? "block" : "none";
+        // Log scale checkboxes: only for numeric axes (scatter has both, box has one)
+        document.getElementById("plots-log-h").parentElement.style.display =
+            plotsData.plot_type === "scatter" ? "block" : "none";
+        document.getElementById("plots-log-v").parentElement.style.display =
+            (plotsData.plot_type === "scatter" || plotsData.plot_type === "box") ? "block" : "none";
+        // Regression line only for scatter
+        document.getElementById("plots-regression-wrap").style.display =
+            plotsData.plot_type === "scatter" ? "block" : "none";
 
         document.getElementById("plots-info").textContent =
             "Showing " + plotsData.total_samples + " samples with data in both profiles (axes)";
@@ -2419,9 +2445,23 @@ function renderPlotsBar() {
     plotsChart.setOption(option, true);
 }
 
+// Legacy ref: PlotsTab.tsx:65 — maybeSetLogScale; transform is log2(value + 1)
+function _applyLog(val) { return Math.log2(val + 1); }
+
 function renderPlotsScatter() {
     var d = plotsData;
-    var points = d.points.map(p => [p.x, p.y]);
+    var logH = document.getElementById("plots-log-h").checked;
+    var logV = document.getElementById("plots-log-v").checked;
+    var showRegression = document.getElementById("plots-regression").checked;
+
+    var points = d.points.map(function(p) {
+        var x = logH ? _applyLog(p.x) : p.x;
+        var y = logV ? _applyLog(p.y) : p.y;
+        return [x, y];
+    });
+
+    var hLabel = d.h_label + (logH ? ' (log2(value + 1))' : '');
+    var vLabel = d.v_label + (logV ? ' (log2(value + 1))' : '');
 
     // Reset container to default size for scatter
     var container = document.getElementById("plots-chart-container");
@@ -2429,10 +2469,37 @@ function renderPlotsScatter() {
     container.style.height = "500px";
     plotsChart.resize();
 
+    var seriesList = [{
+        type: 'scatter', data: points,
+        symbolSize: 4, itemStyle: { color: '#2986E2', opacity: 0.6 },
+    }];
+
+    // Regression line (least-squares)
+    if (showRegression && points.length >= 2) {
+        var n = points.length;
+        var sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        points.forEach(function(pt) {
+            sumX += pt[0]; sumY += pt[1]; sumXY += pt[0]*pt[1]; sumX2 += pt[0]*pt[0];
+        });
+        var denom = n * sumX2 - sumX * sumX;
+        if (Math.abs(denom) > 1e-10) {
+            var slope = (n * sumXY - sumX * sumY) / denom;
+            var intercept = (sumY - slope * sumX) / n;
+            var xMin = Math.min.apply(null, points.map(function(p){return p[0];}));
+            var xMax = Math.max.apply(null, points.map(function(p){return p[0];}));
+            seriesList.push({
+                type: 'line', data: [[xMin, slope*xMin+intercept], [xMax, slope*xMax+intercept]],
+                symbol: 'none', lineStyle: { color: '#dc3912', width: 2 },
+                tooltip: { show: false },
+            });
+        }
+    }
+
     plotsChart.setOption({
         tooltip: {
             trigger: 'item',
             formatter: function(p) {
+                if (p.seriesType !== 'scatter') return '';
                 var pt = d.points[p.dataIndex];
                 return '<b>' + (pt.sample_id || '') + '</b><br>' +
                     d.h_label + ': ' + pt.x + '<br>' +
@@ -2440,12 +2507,9 @@ function renderPlotsScatter() {
             },
         },
         grid: { left: 90, right: 40, top: 20, bottom: 60 },
-        xAxis: { type: 'value', name: d.h_label, nameLocation: 'middle', nameGap: 35 },
-        yAxis: { type: 'value', name: d.v_label, nameLocation: 'middle', nameGap: 60 },
-        series: [{
-            type: 'scatter', data: points,
-            symbolSize: 4, itemStyle: { color: '#2986E2', opacity: 0.6 },
-        }],
+        xAxis: { type: 'value', name: hLabel, nameLocation: 'middle', nameGap: 35 },
+        yAxis: { type: 'value', name: vLabel, nameLocation: 'middle', nameGap: 60 },
+        series: seriesList,
         toolbox: {
             right: 10, top: 0,
             feature: { saveAsImage: { title: 'Download', pixelRatio: 2 } },
@@ -2455,13 +2519,18 @@ function renderPlotsScatter() {
 
 function renderPlotsBox() {
     var d = plotsData;
+    var logV = document.getElementById("plots-log-v").checked;
+
+    var boxData = d.box_data;
+    if (logV) {
+        boxData = boxData.map(function(b) { return b.map(_applyLog); });
+    }
+    var vLabel = d.v_label + (logV ? ' (log2(value + 1))' : '');
 
     // Legacy MultipleCategoryBarPlot.tsx:672-686: bottomPadding = biggestCategoryLabelSize
-    // (label width * sin(50°)) for vertical bars
     var maxLabelPx = Math.max(...d.categories.map(function(label) { return label.length * 6.5; }));
     var boxBottomPad = maxLabelPx * Math.abs(Math.sin(50 * Math.PI / 180)) + 20;
 
-    // Reset container to fit content
     var container = document.getElementById("plots-chart-container");
     container.style.width = "100%";
     container.style.height = (650 + boxBottomPad + 20) + "px";
@@ -2474,10 +2543,10 @@ function renderPlotsBox() {
             type: 'category', data: d.categories,
             axisLabel: { rotate: 50, fontSize: 11, interval: 0 },
         },
-        yAxis: { type: 'value', name: d.v_label, nameLocation: 'middle', nameGap: 50 },
+        yAxis: { type: 'value', name: vLabel, nameLocation: 'middle', nameGap: 50 },
         series: [{
             type: 'boxplot',
-            data: d.box_data,
+            data: boxData,
             itemStyle: { color: '#fff', borderColor: '#2986E2' },
         }],
         toolbox: {
