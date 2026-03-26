@@ -109,6 +109,23 @@ def conn():
         ('test_study', 'FRACTION_GENOME_ALTERED', 'Fraction Genome Altered', 'FGA', 'NUMBER', false, 2)
     """)
 
+    # -- expression table (mRNA)
+    c.execute("""
+        CREATE TABLE "test_study_expression" (
+            study_id VARCHAR, hugo_symbol VARCHAR, sample_id VARCHAR, expression_value DOUBLE
+        )
+    """)
+    c.execute("""
+        INSERT INTO "test_study_expression" VALUES
+        ('test_study', 'KRAS', 'S1', 105.5),
+        ('test_study', 'KRAS', 'S2', 230.1),
+        ('test_study', 'KRAS', 'S3', 50.8),
+        ('test_study', 'KRAS', 'S5', 0.0),
+        ('test_study', 'BRAF', 'S1', 88.2),
+        ('test_study', 'BRAF', 'S2', 410.7),
+        ('test_study', 'BRAF', 'S4', 175.3)
+    """)
+
     yield c
     c.close()
 
@@ -510,3 +527,59 @@ class TestDataBanner:
         assert result["h_total"] == 5
         assert result["v_total"] == 5
         assert result["total_samples"] == 5
+
+
+# ── mRNA Expression Axis ───────────────────────────────────────────────
+
+
+class TestExpressionAxis:
+    def test_expression_returns_numeric(self, conn):
+        """mRNA expression axis should return numeric values."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        # numeric × discrete → box plot
+        assert result["plot_type"] == "box"
+
+    def test_expression_values(self, conn):
+        """Expression values should match what we inserted."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        # KRAS expression: S1=105.5, S2=230.1, S3=50.8, S5=0.0
+        raw = {}
+        for cat, pts in result["box_raw_data"].items():
+            for pt in pts:
+                raw[pt["sample_id"]] = pt["value"]
+        assert abs(raw["S1"] - 105.5) < 0.01
+        assert abs(raw["S2"] - 230.1) < 0.01
+        assert abs(raw["S3"] - 50.8) < 0.01
+        assert abs(raw["S5"] - 0.0) < 0.01
+
+    def test_expression_scatter(self, conn):
+        """Two expression axes → scatter plot."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "KRAS"},
+            {"data_type": "mrna_expression", "gene": "BRAF"},
+        )
+        assert result["plot_type"] == "scatter"
+        # Common samples: S1 and S2 (both have KRAS and BRAF expression)
+        assert result["total_samples"] == 2
+
+    def test_expression_empty_gene(self, conn):
+        """Gene with no expression data → empty result."""
+        result = get_plots_data(
+            conn,
+            "test_study",
+            {"data_type": "mrna_expression", "gene": "FAKEGENE"},
+            {"data_type": "clinical_attribute", "attribute_id": "CANCER_TYPE"},
+        )
+        assert result["total_samples"] == 0

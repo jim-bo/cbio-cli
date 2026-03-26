@@ -13,6 +13,7 @@ def load_all(
     cna: Optional[bool] = typer.Option(None, help="Load CNA data (default: True when no flags given)"),
     sv: Optional[bool] = typer.Option(None, help="Load SV data (default: True when no flags given)"),
     timeline: Optional[bool] = typer.Option(None, help="Load timeline data (default: True when no flags given)"),
+    expression: Optional[bool] = typer.Option(None, help="Load expression data (default: True when no flags given)"),
 ):
     """Load studies from the source directory into DuckDB."""
     source_path = loader.get_source_path()
@@ -21,17 +22,18 @@ def load_all(
         typer.echo("Error: Neither CBIO_DOWNLOADS nor CBIO_DATAHUB environment variables are set.")
         raise typer.Exit(code=1)
 
-    load_all_types = all(x is None for x in [mutations, cna, sv, timeline])
-    load_mutations = load_all_types or mutations is True
-    load_cna       = load_all_types or cna is True
-    load_sv        = load_all_types or sv is True
-    load_timeline  = load_all_types or timeline is True
+    load_all_types = all(x is None for x in [mutations, cna, sv, timeline, expression])
+    load_mutations    = load_all_types or mutations is True
+    load_cna          = load_all_types or cna is True
+    load_sv           = load_all_types or sv is True
+    load_timeline     = load_all_types or timeline is True
+    load_expression   = load_all_types or expression is True
 
     conn = database.get_connection()
     typer.echo(f"Searching for studies in {source_path}...")
 
     loaded_count, metrics = loader.load_all_studies(
-        conn, source_path, limit=limit, offset=offset, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline
+        conn, source_path, limit=limit, offset=offset, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline, load_expression=load_expression
     )
     
     conn.close()
@@ -49,6 +51,7 @@ def load_lfs(
     cna: Optional[bool] = typer.Option(None, help="Load CNA data (default: True when no flags given)"),
     sv: Optional[bool] = typer.Option(None, help="Load SV data (default: True when no flags given)"),
     timeline: Optional[bool] = typer.Option(None, help="Load timeline data (default: True when no flags given)"),
+    expression: Optional[bool] = typer.Option(None, help="Load expression data (default: True when no flags given)"),
     keep_data: bool = typer.Option(False, help="Whether to keep the uncompressed data on disk after loading"),
 ):
     """Load an LFS-backed study by pulling, loading, and then hiding the data."""
@@ -57,11 +60,12 @@ def load_lfs(
         typer.echo("Error: CBIO_DATAHUB must be set and point to a git repository.")
         raise typer.Exit(code=1)
 
-    load_all_types = all(x is None for x in [mutations, cna, sv, timeline])
-    load_mutations = load_all_types or mutations is True
-    load_cna       = load_all_types or cna is True
-    load_sv        = load_all_types or sv is True
-    load_timeline  = load_all_types or timeline is True
+    load_all_types = all(x is None for x in [mutations, cna, sv, timeline, expression])
+    load_mutations    = load_all_types or mutations is True
+    load_cna          = load_all_types or cna is True
+    load_sv           = load_all_types or sv is True
+    load_timeline     = load_all_types or timeline is True
+    load_expression   = load_all_types or expression is True
 
     # 1. Pull data from LFS
     typer.echo(f"Pulling LFS data for {study_id}...")
@@ -81,10 +85,10 @@ def load_lfs(
         conn = database.get_connection()
         loader.ensure_gene_reference(conn)
         loader.load_study_metadata(conn, study_path)
-        success = loader.load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline)
+        success = loader.load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline, load_expression=load_expression)
         loader.create_global_views(conn)
         conn.close()
-        
+
         # 3. Cleanup (Hide data)
         if not keep_data:
             typer.echo(f"Cleaning up uncompressed files...")
@@ -106,13 +110,15 @@ def add(
     cna: Optional[bool] = typer.Option(None, help="Load CNA data (default: True when no flags given)"),
     sv: Optional[bool] = typer.Option(None, help="Load SV data (default: True when no flags given)"),
     timeline: Optional[bool] = typer.Option(None, help="Load timeline data (default: True when no flags given)"),
+    expression: Optional[bool] = typer.Option(None, help="Load expression data (default: True when no flags given)"),
 ):
     """Add or update a single study by ID."""
-    load_all_types = all(x is None for x in [mutations, cna, sv, timeline])
-    load_mutations = load_all_types or mutations is True
-    load_cna       = load_all_types or cna is True
-    load_sv        = load_all_types or sv is True
-    load_timeline  = load_all_types or timeline is True
+    load_all_types = all(x is None for x in [mutations, cna, sv, timeline, expression])
+    load_mutations    = load_all_types or mutations is True
+    load_cna          = load_all_types or cna is True
+    load_sv           = load_all_types or sv is True
+    load_timeline     = load_all_types or timeline is True
+    load_expression   = load_all_types or expression is True
 
     study_path = loader.find_study_path(study_id)
     if not study_path:
@@ -128,7 +134,7 @@ def add(
     loader.load_study_metadata(conn, study_path)
 
     # 2. Data
-    success = loader.load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline)
+    success = loader.load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline, load_expression=load_expression)
     
     # 3. Refresh Views
     loader.create_global_views(conn)

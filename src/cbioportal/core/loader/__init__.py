@@ -83,6 +83,7 @@ def load_study(
     load_cna: bool = False,
     load_sv: bool = False,
     load_timeline: bool = False,
+    load_expression: bool = False,
 ):
     """Load clinical and genomic data for a study."""
     raw_study_id = study_path.name
@@ -93,6 +94,11 @@ def load_study(
     sv_file = study_path / "data_sv.txt"
     cna_file = study_path / "data_cna.txt"
     timeline_files = list(study_path.glob("data_timeline_*.txt"))
+    expression_files = (
+        list(study_path.glob("data_mrna_seq_*.txt"))
+        + list(study_path.glob("data_expression_*.txt"))
+        + list(study_path.glob("data_rna_seq_*.txt"))
+    )
 
     if not mutation_file.exists():
         variants = list(study_path.glob("data_mutations*.txt"))
@@ -238,6 +244,107 @@ def load_study(
                     conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch)
             normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
+        if load_expression and expression_files:
+            # Expression data uses the same wide-matrix format as CNA:
+            # Hugo_Symbol  Entrez_Gene_Id  SAMPLE_1  SAMPLE_2 ...
+            # Values are continuous (RSEM, TPM, FPKM, etc.) — keep all non-null.
+            expr_file = expression_files[0]  # Use the first available expression file
+            table_name = f'"{raw_study_id}_expression"'
+            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+            _NON_SAMPLE_COLS_EXPR = {"Hugo_Symbol", "Entrez_Gene_Id", "Cytoband", "Composite.Element.REF"}
+            with open(expr_file) as _f:
+                for _line in _f:
+                    if not _line.startswith("#"):
+                        _header_cols_expr = _line.strip().split("\t")
+                        break
+            _hugo_col_expr = _header_cols_expr.index("Hugo_Symbol") if "Hugo_Symbol" in _header_cols_expr else None
+            _sample_cols_expr = [c for c in _header_cols_expr if c not in _NON_SAMPLE_COLS_EXPR]
+            _n_samples_expr = len(_sample_cols_expr)
+
+            if _n_samples_expr <= 5_000:
+                _exclude_expr = [c for c in _header_cols_expr if c in _NON_SAMPLE_COLS_EXPR]
+                if len(_exclude_expr) > 1:
+                    _exclude_clause_expr = f"({', '.join(_exclude_expr)})"
+                elif _exclude_expr:
+                    _exclude_clause_expr = _exclude_expr[0]
+                else:
+                    _exclude_clause_expr = None
+                _entrez_col_expr = _header_cols_expr.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in _header_cols_expr else None
+                if _hugo_col_expr is not None:
+                    _hugo_select_expr = "Hugo_Symbol as hugo_symbol,"
+                    _join_clause_expr = ""
+                else:
+                    _hugo_select_expr = "gr.hugo_gene_symbol as hugo_symbol,"
+                    _join_clause_expr = "JOIN gene_reference gr ON TRY_CAST(unpivoted.Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id"
+                _on_clause_expr = f"ON COLUMNS(* EXCLUDE {_exclude_clause_expr})" if _exclude_clause_expr else "ON COLUMNS(*)"
+                conn.execute(f"""
+                    CREATE TABLE {table_name} AS
+                    SELECT * FROM (
+                        SELECT
+                            '{raw_study_id}' as study_id,
+                            {_hugo_select_expr}
+                            sample_id,
+                            TRY_CAST(expression_value AS DOUBLE) as expression_value
+                        FROM (
+                            UNPIVOT (SELECT * FROM read_csv('{expr_file}', delim='\\t', header=True, all_varchar=True, ignore_errors=True, null_padding=True))
+                            {_on_clause_expr}
+                            INTO NAME sample_id VALUE expression_value
+                        ) unpivoted
+                        {_join_clause_expr}
+                    ) WHERE expression_value IS NOT NULL
+                """)
+            else:
+                conn.execute(f"""
+                    CREATE TABLE {table_name} (
+                        study_id         VARCHAR NOT NULL,
+                        hugo_symbol      VARCHAR,
+                        sample_id        VARCHAR NOT NULL,
+                        expression_value DOUBLE NOT NULL
+                    )
+                """)
+                _entrez_col_expr = _header_cols_expr.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in _header_cols_expr else None
+                _sample_indices_expr = [(i, c) for i, c in enumerate(_header_cols_expr) if c not in _NON_SAMPLE_COLS_EXPR]
+                _entrez_to_hugo_expr: dict[int, str] = {}
+                if _hugo_col_expr is None and _entrez_col_expr is not None:
+                    _entrez_to_hugo_expr = {
+                        r[0]: r[1]
+                        for r in conn.execute("SELECT entrez_gene_id, hugo_gene_symbol FROM gene_reference").fetchall()
+                        if r[1]
+                    }
+                _batch_expr: list[tuple] = []
+                with open(expr_file) as _f:
+                    for _line in _f:
+                        if _line.startswith("#"):
+                            continue
+                        _parts = _line.rstrip("\n").split("\t")
+                        if _parts[0] == _header_cols_expr[0]:
+                            continue
+                        if _hugo_col_expr is not None:
+                            _hugo = _parts[_hugo_col_expr]
+                        elif _entrez_col_expr is not None:
+                            try:
+                                _hugo = _entrez_to_hugo_expr.get(int(_parts[_entrez_col_expr]), "")
+                            except (ValueError, IndexError):
+                                _hugo = ""
+                        else:
+                            _hugo = ""
+                        for _idx, _sample_id in _sample_indices_expr:
+                            try:
+                                _raw = _parts[_idx].strip()
+                                if _raw in ("", "NA", "null", "NULL"):
+                                    continue
+                                _val = float(_raw)
+                            except (ValueError, IndexError):
+                                continue
+                            _batch_expr.append((raw_study_id, _hugo, _sample_id, _val))
+                        if len(_batch_expr) >= 10_000:
+                            conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch_expr)
+                            _batch_expr.clear()
+                if _batch_expr:
+                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch_expr)
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
         if load_timeline and timeline_files:
             for timeline_file in timeline_files:
                 # Extract suffix from filename, e.g., 'treatment' from 'data_timeline_treatment.txt'
@@ -320,6 +427,7 @@ def load_all_studies(
     load_cna: bool = False,
     load_sv: bool = False,
     load_timeline: bool = False,
+    load_expression: bool = False,
 ):
     """Iterate through studies and load them incrementally."""
     monitor = Monitor()
@@ -342,7 +450,7 @@ def load_all_studies(
     with typer.progressbar(studies, label="Loading studies") as progress:
         for study_path in progress:
             load_study_metadata(conn, study_path)
-            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline):
+            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline, load_expression=load_expression):
                 total_loaded += 1
             conn.execute("CHECKPOINT")
     create_global_views(conn)

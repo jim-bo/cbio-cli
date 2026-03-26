@@ -342,6 +342,8 @@ def _get_axis_values(conn, study_id: str, config: dict) -> dict:
         return _get_sv_axis(conn, study_id, config)
     elif data_type == "copy_number":
         return _get_cna_axis(conn, study_id, config)
+    elif data_type == "mrna_expression":
+        return _get_expression_axis(conn, study_id, config)
     else:
         return {"values": {}, "is_numeric": False, "label": "Unknown"}
 
@@ -605,6 +607,44 @@ def _get_cna_axis(conn, study_id: str, config: dict) -> dict:
 
     profile_name = get_molecular_profile_name(conn, study_id, "cna")
     return {"values": values, "is_numeric": False, "label": f"{gene}: {profile_name}"}
+
+
+def _get_expression_axis(conn, study_id: str, config: dict) -> dict:
+    """Get mRNA expression values per sample for a gene.
+
+    Legacy ref: PlotsTabUtils.tsx:1034-1044 — makeAxisDataPromise_Molecular
+    for MRNA_EXPRESSION / PROTEIN_LEVEL / METHYLATION profiles.
+    Returns raw numeric values, always numeric datatype.
+    """
+    gene = config.get("gene", "")
+
+    try:
+        rows = conn.execute(
+            f'SELECT sample_id, expression_value '
+            f'FROM "{study_id}_expression" '
+            f'WHERE hugo_symbol = ?',
+            [gene],
+        ).fetchall()
+    except Exception:
+        return {"values": {}, "is_numeric": True, "label": f"{gene}: mRNA Expression"}
+
+    values = {sid: float(val) for sid, val in rows if val is not None}
+
+    # Get profile name from molecular_profiles if available
+    profile_name = "mRNA Expression"
+    try:
+        row = conn.execute(
+            "SELECT profile_name FROM molecular_profiles "
+            "WHERE study_id = ? AND genetic_alteration_type = 'MRNA_EXPRESSION' "
+            "LIMIT 1",
+            [study_id],
+        ).fetchone()
+        if row and row[0]:
+            profile_name = row[0]
+    except Exception:
+        pass
+
+    return {"values": values, "is_numeric": True, "label": f"{gene}: {profile_name}"}
 
 
 def _build_bar_data(

@@ -86,7 +86,8 @@ def create_global_views(conn):
         "mutations": "mutations",
         "gene_panel": "gene_panel_matrix",
         "sv": "sv",
-        "cna": "cna"
+        "cna": "cna",
+        "expression": "expression",
     }
 
     # Dynamically find timeline suffixes
