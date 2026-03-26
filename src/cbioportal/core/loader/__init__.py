@@ -77,6 +77,176 @@ class Monitor:
         }
 
 
+def _load_generic_assay(conn, study_id: str, filepath: Path, stable_id: str, meta_props: set[str]) -> None:
+    """Load a generic assay file (drug treatment, etc.) into long format.
+
+    Creates table ``{study_id}_ga_{stable_id}`` with columns:
+        study_id, entity_id, sample_id, value DOUBLE, is_limit BOOLEAN
+
+    ``meta_props`` is the set of non-sample metadata columns declared in
+    ``generic_entity_meta_properties`` (e.g. NAME, URL, DESCRIPTION).
+    Values prefixed with '>' or '<' are censored (limit values).
+    """
+    # Columns that are entity metadata, not sample IDs
+    _META_COLS = {"ENTITY_STABLE_ID"} | {p.strip() for p in meta_props}
+
+    with open(filepath) as f:
+        for line in f:
+            if not line.startswith("#"):
+                header_cols = line.strip().split("\t")
+                break
+
+    entity_col = header_cols.index("ENTITY_STABLE_ID") if "ENTITY_STABLE_ID" in header_cols else 0
+    sample_indices = [(i, c) for i, c in enumerate(header_cols) if c not in _META_COLS]
+
+    safe_id = stable_id.replace("-", "_").replace(" ", "_")
+    table_name = f'"{study_id}_ga_{safe_id}"'
+    conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute(f"""
+        CREATE TABLE {table_name} (
+            study_id  VARCHAR NOT NULL,
+            entity_id VARCHAR NOT NULL,
+            sample_id VARCHAR NOT NULL,
+            value     DOUBLE,
+            is_limit  BOOLEAN DEFAULT false
+        )
+    """)
+
+    batch: list[tuple] = []
+    with open(filepath) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if parts[entity_col] == "ENTITY_STABLE_ID":
+                continue  # header row
+            entity_id = parts[entity_col] if entity_col < len(parts) else ""
+            for idx, sample_id in sample_indices:
+                try:
+                    raw = parts[idx].strip() if idx < len(parts) else ""
+                    if raw in ("", "NA", "null", "NULL"):
+                        continue
+                    is_limit = raw.startswith(">") or raw.startswith("<")
+                    val = float(raw.lstrip("><"))
+                except (ValueError, IndexError):
+                    continue
+                batch.append((study_id, entity_id, sample_id, val, is_limit))
+                if len(batch) >= 10_000:
+                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?)", batch)
+                    batch.clear()
+    if batch:
+        conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?)", batch)
+
+
+def _load_wide_matrix(conn, study_id: str, filepath: Path, table_name: str, value_col: str, *, filter_zeros: bool = False):
+    """Load a gene×sample wide matrix (CNA, expression, protein, methylation) into long format.
+
+    Args:
+        filter_zeros: If True, exclude rows where value == 0 (used for CNA to save space).
+    """
+    _NON_SAMPLE = {"Hugo_Symbol", "Entrez_Gene_Id", "Cytoband", "Composite.Element.REF"}
+    with open(filepath) as f:
+        for line in f:
+            if not line.startswith("#"):
+                header_cols = line.strip().split("\t")
+                break
+    hugo_col = header_cols.index("Hugo_Symbol") if "Hugo_Symbol" in header_cols else None
+    composite_col = header_cols.index("Composite.Element.REF") if "Composite.Element.REF" in header_cols else None
+    sample_cols = [c for c in header_cols if c not in _NON_SAMPLE]
+    n_samples = len(sample_cols)
+
+    conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+    if n_samples <= 5_000:
+        exclude = [f'"{c}"' for c in header_cols if c in _NON_SAMPLE]
+        if len(exclude) > 1:
+            exclude_clause = f"({', '.join(exclude)})"
+        elif exclude:
+            exclude_clause = exclude[0]
+        else:
+            exclude_clause = None
+        if hugo_col is not None:
+            hugo_select = "Hugo_Symbol as hugo_symbol,"
+            join_clause = ""
+        elif composite_col is not None:
+            hugo_select = 'split_part("Composite.Element.REF", \'|\', 1) as hugo_symbol,'
+            join_clause = ""
+        else:
+            hugo_select = "gr.hugo_gene_symbol as hugo_symbol,"
+            join_clause = "JOIN gene_reference gr ON TRY_CAST(unpivoted.Entrez_Gene_Id AS INTEGER) = gr.entrez_gene_id"
+        on_clause = f"ON COLUMNS(* EXCLUDE {exclude_clause})" if exclude_clause else "ON COLUMNS(*)"
+        where = f"WHERE {value_col} IS NOT NULL" + (f" AND {value_col} != 0" if filter_zeros else "")
+        conn.execute(f"""
+            CREATE TABLE {table_name} AS
+            SELECT * FROM (
+                SELECT
+                    '{study_id}' as study_id,
+                    {hugo_select}
+                    sample_id,
+                    TRY_CAST({value_col} AS DOUBLE) as {value_col}
+                FROM (
+                    UNPIVOT (SELECT * FROM read_csv('{filepath}', delim='\\t', header=True, all_varchar=True, ignore_errors=True, null_padding=True))
+                    {on_clause}
+                    INTO NAME sample_id VALUE {value_col}
+                ) unpivoted
+                {join_clause}
+            ) {where}
+        """)
+    else:
+        conn.execute(f"""
+            CREATE TABLE {table_name} (
+                study_id    VARCHAR NOT NULL,
+                hugo_symbol VARCHAR,
+                sample_id   VARCHAR NOT NULL,
+                {value_col} DOUBLE NOT NULL
+            )
+        """)
+        entrez_col = header_cols.index("Entrez_Gene_Id") if "Entrez_Gene_Id" in header_cols else None
+        sample_indices = [(i, c) for i, c in enumerate(header_cols) if c not in _NON_SAMPLE]
+        entrez_to_hugo: dict[int, str] = {}
+        if hugo_col is None and composite_col is None and entrez_col is not None:
+            entrez_to_hugo = {
+                r[0]: r[1]
+                for r in conn.execute("SELECT entrez_gene_id, hugo_gene_symbol FROM gene_reference").fetchall()
+                if r[1]
+            }
+        batch: list[tuple] = []
+        with open(filepath) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if parts[0] == header_cols[0]:
+                    continue
+                if hugo_col is not None:
+                    hugo = parts[hugo_col]
+                elif composite_col is not None:
+                    hugo = parts[composite_col].split("|")[0]
+                elif entrez_col is not None:
+                    try:
+                        hugo = entrez_to_hugo.get(int(parts[entrez_col]), "")
+                    except (ValueError, IndexError):
+                        hugo = ""
+                else:
+                    hugo = ""
+                for idx, sample_id in sample_indices:
+                    try:
+                        raw = parts[idx].strip()
+                        if raw in ("", "NA", "null", "NULL"):
+                            continue
+                        val = float(raw)
+                    except (ValueError, IndexError):
+                        continue
+                    if filter_zeros and val == 0:
+                        continue
+                    batch.append((study_id, hugo, sample_id, val))
+                if len(batch) >= 10_000:
+                    conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", batch)
+                    batch.clear()
+        if batch:
+            conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", batch)
+
+
 def load_study(
     conn,
     study_path: Path,
@@ -84,6 +254,7 @@ def load_study(
     load_cna: bool = False,
     load_sv: bool = False,
     load_timeline: bool = False,
+    load_expression: bool = False,
 ):
     """Load clinical and genomic data for a study."""
     raw_study_id = study_path.name
@@ -94,6 +265,13 @@ def load_study(
     sv_file = study_path / "data_sv.txt"
     cna_file = study_path / "data_cna.txt"
     timeline_files = list(study_path.glob("data_timeline_*.txt"))
+    expression_files = (
+        list(study_path.glob("data_mrna_seq_*.txt"))
+        + list(study_path.glob("data_expression_*.txt"))
+        + list(study_path.glob("data_rna_seq_*.txt"))
+    )
+    protein_files = list(study_path.glob("data_rppa*.txt")) + list(study_path.glob("data_protein_quantification*.txt"))
+    methylation_files = list(study_path.glob("data_methylation*.txt"))
 
     if not mutation_file.exists():
         variants = list(study_path.glob("data_mutations*.txt"))
@@ -239,6 +417,39 @@ def load_study(
                     conn.executemany(f"INSERT INTO {table_name} VALUES (?, ?, ?, ?)", _batch)
             normalize_hugo_symbols(conn, raw_study_id)
             loaded_any = True
+        if load_expression and expression_files:
+            _load_wide_matrix(conn, raw_study_id, expression_files[0],
+                              f'"{raw_study_id}_expression"', "expression_value")
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
+        if load_expression and protein_files:
+            _load_wide_matrix(conn, raw_study_id, protein_files[0],
+                              f'"{raw_study_id}_protein"', "protein_value")
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
+        if load_expression and methylation_files:
+            _load_wide_matrix(conn, raw_study_id, methylation_files[0],
+                              f'"{raw_study_id}_methylation"', "methylation_value")
+            normalize_hugo_symbols(conn, raw_study_id)
+            loaded_any = True
+        if load_expression:
+            # Load generic assay profiles (treatment response, etc.)
+            # We load ALL meta_*.txt files with genetic_alteration_type=GENERIC_ASSAY
+            for meta_path in sorted(study_path.glob("meta_*.txt")):
+                meta = parse_meta_file(meta_path)
+                if meta.get("genetic_alteration_type") != "GENERIC_ASSAY":
+                    continue
+                stable_id = meta.get("stable_id", "")
+                data_filename = meta.get("data_filename", "")
+                if not stable_id or not data_filename:
+                    continue
+                data_file = study_path / data_filename
+                if not data_file.exists():
+                    continue
+                raw_props = meta.get("generic_entity_meta_properties", "")
+                meta_props = {p.strip() for p in raw_props.split(",") if p.strip()} if raw_props else set()
+                _load_generic_assay(conn, raw_study_id, data_file, stable_id, meta_props)
+                loaded_any = True
         if load_timeline and timeline_files:
             for timeline_file in timeline_files:
                 # Extract suffix from filename, e.g., 'treatment' from 'data_timeline_treatment.txt'
@@ -321,6 +532,7 @@ def load_all_studies(
     load_cna: bool = False,
     load_sv: bool = False,
     load_timeline: bool = False,
+    load_expression: bool = False,
 ):
     """Iterate through studies and load them incrementally."""
     monitor = Monitor()
@@ -343,7 +555,7 @@ def load_all_studies(
     with typer.progressbar(studies, label="Loading studies") as progress:
         for study_path in progress:
             load_study_metadata(conn, study_path)
-            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline):
+            if load_study(conn, study_path, load_mutations=load_mutations, load_cna=load_cna, load_sv=load_sv, load_timeline=load_timeline, load_expression=load_expression):
                 total_loaded += 1
             conn.execute("CHECKPOINT")
     create_global_views(conn)
